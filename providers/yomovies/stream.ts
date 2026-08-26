@@ -7,7 +7,13 @@ import {
   PROVIDER_NAME,
   yoHeaders,
 } from "./client";
-import { findVideoUrls, qualityFromText, unpack } from "./utils";
+import {
+  decodeUrlEntities,
+  findVideoUrls,
+  isAdaptiveMaster,
+  qualityFromText,
+  unpack,
+} from "./utils";
 
 function serverNameFromUrl(url: string): string {
   try {
@@ -86,16 +92,26 @@ async function resolveEmbed({
       }
     }
 
-    for (const url of candidates) {
+    for (const raw of candidates) {
+      const url = decodeUrlEntities(raw);
+      const isHls = /\.m3u8/i.test(url.split("?")[0]);
+
+      // The CDN host is usually NOT the embed host (e.g. embed on
+      // speedostream1.com, media on mishai.ydc1wes.me). Signed urls are
+      // validated against the *embed* origin, so that is what we must send.
       streams.push({
         server,
         link: url,
-        type: /\.m3u8/i.test(url) ? "m3u8" : "mp4",
-        quality: qualityFromText(url),
+        type: isHls ? "m3u8" : "mp4",
+        // never pin a resolution on an adaptive master playlist - the player
+        // picks the rendition itself from the variant list.
+        quality: isAdaptiveMaster(url) ? undefined : qualityFromText(url),
         headers: {
           Referer: origin + "/",
           Origin: origin,
           "User-Agent": yoHeaders["User-Agent"],
+          Accept: "*/*",
+          "Accept-Language": "en-US,en;q=0.9",
         },
       });
     }

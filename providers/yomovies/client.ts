@@ -169,7 +169,12 @@ export async function fetchPage({
 
 export function absoluteUrl(href: string, baseUrl: string): string {
   if (!href) return "";
-  const trimmed = href.trim();
+  // markup often contains `&amp;` inside urls - normalise it here so query
+  // strings (signed tokens, ids) survive intact.
+  const trimmed = href
+    .replace(/&amp;/gi, "&")
+    .replace(/&#0?38;/g, "&")
+    .trim();
   if (trimmed.startsWith("//")) return "https:" + trimmed;
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith("/")) return baseUrl.replace(/\/+$/, "") + trimmed;

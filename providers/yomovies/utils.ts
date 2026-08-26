@@ -5,16 +5,56 @@ export function isSeriesTitle(title: string): boolean {
   );
 }
 
+/**
+ * Decodes HTML entities found in urls scraped out of page markup.
+ * Critical for CDN links: a literal `&amp;` between query params invalidates
+ * the signed token (`?t=...&s=...&e=...`) and the CDN answers 403, so the
+ * player just spins / fails.
+ */
+export function decodeUrlEntities(url: string): string {
+  return (url || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#0?38;/g, "&")
+    .replace(/&#x0?26;/gi, "&")
+    .replace(/&quot;/gi, "")
+    .replace(/&#0?39;/g, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\\u0026/gi, "&")
+    .replace(/\\\//g, "/")
+    .trim();
+}
+
+/**
+ * Guesses the resolution from a url/label. Only the path and explicit quality
+ * tokens are considered - query strings hold timestamps and ids (e.g.
+ * `e=21600`, `f=53245`) that would otherwise be misread as resolutions.
+ */
 export function qualityFromText(
   text: string,
 ): "360" | "480" | "720" | "1080" | "2160" | undefined {
-  const t = (text || "").toLowerCase();
-  if (/2160|4k|uhd/.test(t)) return "2160";
-  if (/1080|fhd/.test(t)) return "1080";
-  if (/720/.test(t)) return "720";
-  if (/480/.test(t)) return "480";
-  if (/360|240/.test(t)) return "360";
+  if (!text) return undefined;
+  // strip the query string before sniffing
+  // underscores are word chars, so normalise separators before matching
+  const t = text.split("?")[0].toLowerCase().replace(/[_\-.]/g, " ");
+  if (/(^|\W)(2160p?|4k|uhd)(\W|$)/.test(t)) return "2160";
+  if (/(^|\W)(1080p?|fhd)(\W|$)/.test(t)) return "1080";
+  if (/(^|\W)720p?(\W|$)/.test(t)) return "720";
+  if (/(^|\W)480p?(\W|$)/.test(t)) return "480";
+  if (/(^|\W)(360|240)p?(\W|$)/.test(t)) return "360";
   return undefined;
+}
+
+/**
+ * netu/speedostream serve multi-variant playlists such as
+ * `/hls2/01/00010/xxxx_,l,h,x,.urlset/master.m3u8`. The `,l,h,x,` part lists
+ * the available renditions, so the master playlist is adaptive - we must not
+ * pin a single resolution on it.
+ */
+export function isAdaptiveMaster(url: string): boolean {
+  return /\.urlset\/|master\.m3u8|index-v1-a1\.m3u8|playlist\.m3u8/i.test(
+    url || "",
+  );
 }
 
 /**
@@ -55,10 +95,13 @@ export function findVideoUrls(html: string): string[] {
   const found: string[] = [];
   const push = (u?: string | null) => {
     if (!u) return;
-    let url = u.replace(/\\\//g, "/").trim();
+    // decode entities BEFORE validating - signed CDN urls arrive as
+    // `...master.m3u8?t=abc&amp;s=123&amp;e=21600` and must be normalised.
+    let url = decodeUrlEntities(u);
     if (url.startsWith("//")) url = "https:" + url;
     if (!/^https?:\/\//i.test(url)) return;
-    if (!/\.(m3u8|mp4)/i.test(url)) return;
+    if (!/\.(m3u8|mp4)(\?|$|&)/i.test(url) && !/\.(m3u8|mp4)/i.test(url))
+      return;
     if (!found.includes(url)) found.push(url);
   };
 

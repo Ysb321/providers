@@ -35,7 +35,28 @@ Vega App provider extensions, based on the
   HLS is sorted first for playback, mp4 first when `isDownload` is true.
 - `settings.ts` – custom domain/mirror override (`yomoviesBaseUrl`), surfaced
   in the app's Provider Manager.
-- `utils.ts` – packed-player unpacking and video-url extraction helpers.
+- `utils.ts` – packed-player unpacking and video-url extraction helpers,
+  plus URL-entity decoding and resolution sniffing.
+
+### Playback gotchas (netu / speedostream CDN)
+
+Media is served from a signed, adaptive CDN url such as
+`https://<host>/hls2/01/00010/<id>_,l,h,x,.urlset/master.m3u8?t=<token>&s=...&e=21600`.
+Three things must be right or the player shows nothing:
+
+1. **Entity decoding** – page markup contains `&amp;` between query params.
+   Leaving it in breaks the signed token and the CDN returns 403, so the URL
+   must be decoded (`decodeUrlEntities`) before being handed to the player.
+2. **Referer / Origin** – the media host differs from the embed host, and the
+   token is validated against the *embed* origin (e.g. `speedostream1.com`),
+   which is what the `headers` on each stream carry.
+3. **Adaptive masters** – `,l,h,x,.urlset/master.m3u8` is a multi-variant
+   playlist, so no fixed `quality` is reported; the player selects a rendition.
+   Query params (`e=21600`, `f=53245`) are excluded from resolution sniffing so
+   they are not misread as `2160p`.
+
+Signed links are also time-limited (`e=21600` = 6h), so they must be resolved
+at playback time and cannot be bookmarked.
 
 Failures are reported with `throwProviderError` (as in
 [Zenda-Cross/vega-providers](https://github.com/Zenda-Cross/vega-providers))
