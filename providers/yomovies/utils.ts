@@ -52,9 +52,11 @@ export function qualityFromText(
  * pin a single resolution on it.
  */
 export function isAdaptiveMaster(url: string): boolean {
-  return /\.urlset\/|master\.m3u8|index-v1-a1\.m3u8|playlist\.m3u8/i.test(
-    url || "",
-  );
+  const path = (url || "").split("?")[0];
+  // A variant playlist lives *below* the urlset directory
+  // (`..._,l,h,x,.urlset/<id>_h/index-v1-a1.m3u8`) and is a single rendition,
+  // so only treat the top-level master/playlist file as adaptive.
+  return /\/(master|playlist)\.m3u8$/i.test(path);
 }
 
 /**

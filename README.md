@@ -47,13 +47,21 @@ Three things must be right or the player shows nothing:
 1. **Entity decoding** – page markup contains `&amp;` between query params.
    Leaving it in breaks the signed token and the CDN returns 403, so the URL
    must be decoded (`decodeUrlEntities`) before being handed to the player.
-2. **Referer / Origin** – the media host differs from the embed host, and the
-   token is validated against the *embed* origin (e.g. `speedostream1.com`),
-   which is what the `headers` on each stream carry.
+2. **Referer, but never `Origin`** – the media host differs from the embed
+   host, and the token is validated against the *embed* origin (e.g.
+   `speedostream1.com`), which the `Referer` on each stream carries. Sending an
+   `Origin` header makes the CDN treat the request as a browser XHR and apply a
+   CORS allow-list, so it answers 403 to the player's segment requests. A
+   downloader issues a single plain GET and still succeeds - that asymmetry is
+   exactly the "download works, streaming doesn't" failure mode.
 3. **Adaptive masters** – `,l,h,x,.urlset/master.m3u8` is a multi-variant
    playlist, so no fixed `quality` is reported; the player selects a rendition.
    Query params (`e=21600`, `f=53245`) are excluded from resolution sniffing so
-   they are not misread as `2160p`.
+   they are not misread as `2160p`. The master is parsed and each
+   `#EXT-X-STREAM-INF` rendition is also exposed as a selectable stream, so a
+   player that cannot start the master has a concrete 1080p/720p/360p fallback.
+   For playback the master is sorted first; for downloads the fixed renditions
+   come first.
 
 Signed links are also time-limited (`e=21600` = 6h), so they must be resolved
 at playback time and cannot be bookmarked.

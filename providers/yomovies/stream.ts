@@ -15,6 +15,97 @@ import {
   unpack,
 } from "./utils";
 
+/**
+ * Headers the video player must replay on EVERY request it makes (master
+ * playlist, variant playlists and each segment).
+ *
+ * Deliberately NO `Origin` header: netu/speedostream CDNs treat a request
+ * carrying `Origin` as a browser XHR and enforce a CORS allow-list, answering
+ * 403 to anything that is not the embed page itself. A downloader issues one
+ * plain GET and succeeds, while the player's segment requests get rejected -
+ * which is exactly the "download works, streaming doesn't" symptom. Only
+ * `Referer` is required for the token check, and that is what the vast
+ * majority of working vega providers send.
+ */
+function playbackHeaders(origin: string): Record<string, string> {
+  return {
+    Referer: origin + "/",
+    "User-Agent": yoHeaders["User-Agent"],
+    Accept: "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+}
+
+/**
+ * A `,l,h,x,.urlset/master.m3u8` playlist lists the individual renditions.
+ * Some players choke on that indirection (or on the comma-heavy path), so we
+ * also expose each variant as its own selectable stream, mirroring what the
+ * anikoto / kickAssAnime providers do.
+ */
+async function expandMasterPlaylist({
+  masterUrl,
+  server,
+  headers,
+  providerContext,
+  signal,
+}: {
+  masterUrl: string;
+  server: string;
+  headers: Record<string, string>;
+  providerContext: ProviderContext;
+  signal?: AbortSignal;
+}): Promise<Stream[]> {
+  const { axios } = providerContext;
+  const variants: Stream[] = [];
+
+  try {
+    const res = await axios.get(masterUrl, { headers, signal, timeout: 8000 });
+    const body: string = typeof res.data === "string" ? res.data : "";
+    if (!body.includes("#EXT-X-STREAM-INF")) return variants;
+
+    const lines = body.split("\n");
+    const dir = masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1);
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line.startsWith("#EXT-X-STREAM-INF")) continue;
+
+      const height = (line.match(/RESOLUTION=\d+x(\d+)/) || [])[1];
+      let next = (lines[i + 1] || "").trim();
+      if (!next || next.startsWith("#")) continue;
+
+      next = decodeUrlEntities(next);
+      const variantUrl = /^https?:\/\//i.test(next)
+        ? next
+        : dir + next.replace(/^\.?\//, "");
+
+      variants.push({
+        server: height ? `${server} ${height}p` : server,
+        link: variantUrl,
+        type: "m3u8",
+        quality: height ? nearestQuality(height) : undefined,
+        headers,
+      });
+    }
+  } catch (err) {
+    console.log("yomovies: could not expand master playlist:", err);
+  }
+
+  return variants;
+}
+
+function nearestQuality(
+  height: string,
+): "360" | "480" | "720" | "1080" | "2160" | undefined {
+  const h = parseInt(height, 10);
+  if (!h) return undefined;
+  if (h >= 1800) return "2160";
+  if (h >= 900) return "1080";
+  if (h >= 650) return "720";
+  if (h >= 400) return "480";
+  return "360";
+}
+
 function serverNameFromUrl(url: string): string {
   try {
     const host = (url.split("/")[2] || "").replace(/^www\./, "");
@@ -92,13 +183,15 @@ async function resolveEmbed({
       }
     }
 
+    // The media host is usually NOT the embed host (embed on
+    // speedostream1.com, media on mishai.ydc1wes.me). The signed token is
+    // checked against the *embed* origin, so that is the Referer we send.
+    const headers = playbackHeaders(origin);
+
     for (const raw of candidates) {
       const url = decodeUrlEntities(raw);
       const isHls = /\.m3u8/i.test(url.split("?")[0]);
 
-      // The CDN host is usually NOT the embed host (e.g. embed on
-      // speedostream1.com, media on mishai.ydc1wes.me). Signed urls are
-      // validated against the *embed* origin, so that is what we must send.
       streams.push({
         server,
         link: url,
@@ -106,14 +199,21 @@ async function resolveEmbed({
         // never pin a resolution on an adaptive master playlist - the player
         // picks the rendition itself from the variant list.
         quality: isAdaptiveMaster(url) ? undefined : qualityFromText(url),
-        headers: {
-          Referer: origin + "/",
-          Origin: origin,
-          "User-Agent": yoHeaders["User-Agent"],
-          Accept: "*/*",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
+        headers,
       });
+
+      // Expose the individual renditions too, so the user has a fallback if
+      // the adaptive master fails to start in the player.
+      if (isHls && isAdaptiveMaster(url)) {
+        const variants = await expandMasterPlaylist({
+          masterUrl: url,
+          server,
+          headers,
+          providerContext,
+          signal,
+        });
+        streams.push(...variants);
+      }
     }
   } catch (err) {
     console.error(`yomovies resolveEmbed failed for ${embedUrl}:`, err);
@@ -204,8 +304,16 @@ export const getStream = async function ({
         return d !== 0 ? d : rank(b) - rank(a);
       });
     } else {
+      // For playback the adaptive master must come first: the app plays
+      // streams[0] and the master lets the player pick a rendition. Variants
+      // follow as manual fallbacks, then any progressive mp4.
       streams.sort((a, b) => {
-        const d = (b.type === "m3u8" ? 1 : 0) - (a.type === "m3u8" ? 1 : 0);
+        const score = (s: Stream) => {
+          if (s.type === "m3u8" && isAdaptiveMaster(s.link)) return 3;
+          if (s.type === "m3u8") return 2;
+          return 1;
+        };
+        const d = score(b) - score(a);
         return d !== 0 ? d : rank(b) - rank(a);
       });
     }
