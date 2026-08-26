@@ -119,7 +119,28 @@ to file hosts rather than embedded players.
   Pixeldrain. Exports `nonStreamableServer` so the app does not hand a
   download-only mirror to the video player, and orders playable servers first
   for streaming / download-optimised mirrors first for downloads.
-- `settings.ts` – mirror override (`extraMoviesBaseUrl`).
+- `settings.ts` – site mirror override (`extraMoviesBaseUrl`) and a HubCloud
+  domain override (`extraMoviesHubcloudDomain`).
+
+### HubCloud mirrors and "Network Error"
+
+Download links point at HubCloud, which rotates domains (`hubcloud.art`,
+`hubcloud.cx`, ...) and is frequently DNS-blocked by Indian ISPs. A blocked
+host surfaces as an axios **"Network Error" with no HTTP response**, which is
+distinct from a 4xx/5xx where the host answered.
+
+`stream.ts` treats these differently:
+
+* **Unreachable host** (DNS/TLS/timeout) – retries the same path across the
+  known mirror domains, preferring any domain set in provider settings.
+* **HTTP error or an empty result** – the mirror answered, so a sibling domain
+  serving the same id would behave identically; it stops rather than spraying
+  every mirror.
+
+The two outcomes produce different, actionable errors: an ISP-blocking hint
+(VPN / 1.1.1.1 DNS / set a working domain) versus "the upload was removed, try
+another quality". If every domain is blocked for you, set a HubCloud domain
+that opens in your browser under provider settings.
 
 ### Vendored extractors
 

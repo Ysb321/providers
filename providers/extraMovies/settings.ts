@@ -16,5 +16,14 @@ export const getSettingsSchema = async function ({
       placeholder: DEFAULT_BASE_URL,
       defaultValue: "",
     },
+    {
+      key: "extraMoviesHubcloudDomain",
+      type: "text",
+      label: "HubCloud Domain",
+      description:
+        "Download links point at HubCloud, which rotates domains and is often DNS-blocked by ISPs. If streams fail with a network error, enter a HubCloud domain that opens in your browser (e.g. hubcloud.art).",
+      placeholder: "hubcloud.art",
+      defaultValue: "",
+    },
   ];
 };
