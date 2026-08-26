@@ -1,6 +1,7 @@
 import { ProviderContext, Stream } from "../types";
 import { throwProviderError } from "../providerErrors";
 import { hubcloudExtractor } from "../extractors/hubcloud";
+import { gdflixExtractor } from "../extractors/gdflix";
 import { gofileExtractor } from "../extractors/gofile";
 import {
   extractorHeaders,
@@ -9,8 +10,35 @@ import {
   PROVIDER_NAME,
 } from "./client";
 
-const HUBCLOUD_HOSTS =
-  /(hubcloud|hubdrive|vcloud|gdflix|gdlink|filepress|gdtot|driveleech|driveseed)/i;
+/** Hosts the hubcloud extractor understands. */
+const HUBCLOUD_HOSTS = /(hubcloud|hubdrive|vcloud|driveleech|driveseed)/i;
+
+/** GDFlix has its own extractor - its pages look nothing like hubcloud's. */
+const GDFLIX_HOSTS = /(gdflix|gdlink|gdtot|\bflix\b)/i;
+
+/** FilePress/FileBee mirrors - resolved by following to their real host. */
+const FILEPRESS_HOSTS = /(filepress|filebee|pressfile|filecrypt)/i;
+
+/** Any file host we can attempt, in the order we prefer to try them. */
+const SUPPORTED_HOSTS = [
+  HUBCLOUD_HOSTS,
+  GDFLIX_HOSTS,
+  /gofile\.io/i,
+  FILEPRESS_HOSTS,
+];
+
+function isSupportedHost(url: string): boolean {
+  return SUPPORTED_HOSTS.some((re) => re.test(url));
+}
+
+/** Ranks a link so the most reliably-resolvable hosts are tried first. */
+function hostPriority(url: string): number {
+  if (HUBCLOUD_HOSTS.test(url)) return 0;
+  if (GDFLIX_HOSTS.test(url)) return 1;
+  if (/gofile\.io/i.test(url)) return 2;
+  if (FILEPRESS_HOSTS.test(url)) return 3;
+  return 9;
+}
 
 /**
  * Known hubcloud mirror domains. The site rotates these (we have seen
@@ -152,6 +180,109 @@ async function extractHubcloud({
   return { streams: [], reachedAnyMirror };
 }
 
+/**
+ * GDFlix pages (`new.gdflix.cfd/file/...`) have their own layout and their own
+ * extractor. Older ExtraMovies posts use GDFlix instead of HubCloud, so this
+ * must never be routed through the hubcloud extractor.
+ */
+async function extractGdflix({
+  url,
+  providerContext,
+  signal,
+}: {
+  url: string;
+  providerContext: ProviderContext;
+  signal?: AbortSignal;
+}): Promise<{ streams: Stream[]; reachedAnyMirror: boolean }> {
+  const { axios, cheerio } = providerContext;
+  let reachedAnyMirror = false;
+
+  try {
+    const headers = await extractorHeaders(providerContext);
+    const result = await gdflixExtractor(
+      url,
+      signal as AbortSignal,
+      axios,
+      cheerio,
+      headers,
+      providerContext,
+    );
+    reachedAnyMirror = true;
+    const streams = Array.isArray(result) ? (result as Stream[]) : [];
+    return { streams, reachedAnyMirror };
+  } catch (err) {
+    const cause = (err as any)?.cause ?? err;
+    if (!isNetworkError(err) && !isNetworkError(cause)) {
+      reachedAnyMirror = true;
+    }
+    console.log("extraMovies: gdflix extraction failed for", url, err);
+    return { streams: [], reachedAnyMirror };
+  }
+}
+
+/**
+ * FilePress / FileBee pages are thin wrappers that point at a real file host.
+ * Follow the page and hand whatever supported link it exposes to the matching
+ * extractor.
+ */
+async function extractFilepress({
+  url,
+  providerContext,
+  signal,
+  isDownload,
+  preferredDomain,
+}: {
+  url: string;
+  providerContext: ProviderContext;
+  signal?: AbortSignal;
+  isDownload?: boolean;
+  preferredDomain?: string;
+}): Promise<{ streams: Stream[]; reachedAnyMirror: boolean }> {
+  const { axios, cheerio } = providerContext;
+
+  try {
+    const headers = await extractorHeaders(providerContext);
+    const res = await axios.get(url, { headers, signal });
+    const html: string = typeof res.data === "string" ? res.data : "";
+    const $ = cheerio.load(html || "");
+
+    const nested: string[] = [];
+    $("a[href]").each((_: unknown, el: any) => {
+      const href = ($(el).attr("href") || "").trim();
+      if (href && isSupportedHost(href) && !FILEPRESS_HOSTS.test(href)) {
+        nested.push(href);
+      }
+    });
+
+    // Some skins put the onward url in a script redirect instead of an anchor.
+    const scripted = html.match(
+      /(?:location\.(?:replace|href)\s*=?\s*\(?['"])(https?:\/\/[^'"]+)['"]/i,
+    )?.[1];
+    if (scripted && isSupportedHost(scripted)) nested.push(scripted);
+
+    for (const candidate of Array.from(new Set(nested))) {
+      const out = GDFLIX_HOSTS.test(candidate)
+        ? await extractGdflix({ url: candidate, providerContext, signal })
+        : await extractHubcloud({
+            url: candidate,
+            providerContext,
+            signal,
+            isDownload,
+            preferredDomain,
+          });
+      if (out.streams.length) return out;
+    }
+
+    // We reached the wrapper even if it led nowhere useful.
+    return { streams: [], reachedAnyMirror: true };
+  } catch (err) {
+    const cause = (err as any)?.cause ?? err;
+    const reached = !isNetworkError(err) && !isNetworkError(cause);
+    console.log("extraMovies: filepress extraction failed for", url, err);
+    return { streams: [], reachedAnyMirror: reached };
+  }
+}
+
 async function extractGofile({
   url,
   providerContext,
@@ -228,7 +359,7 @@ export const getStream = async function ({
       $("a[href]").each((_, el) => {
         const href = ($(el).attr("href") || "").trim();
         if (!href) return;
-        if (HUBCLOUD_HOSTS.test(href) || /gofile\.io/i.test(href)) {
+        if (isSupportedHost(href)) {
           if (!targets.includes(href)) targets.push(href);
         }
       });
@@ -238,13 +369,36 @@ export const getStream = async function ({
 
     if (!targets.length) return [];
 
+    // Try the most reliably-resolvable hosts first (hubcloud, then gdflix,
+    // gofile, and finally filepress wrappers).
+    targets.sort((a, b) => hostPriority(a) - hostPriority(b));
+
     let streams: Stream[] = [];
     let reachedAnyHost = false;
     for (const target of targets) {
-      let resolved: Stream[];
+      let resolved: Stream[] = [];
+
       if (/gofile\.io/i.test(target)) {
         resolved = await extractGofile({ url: target, providerContext });
         if (resolved.length) reachedAnyHost = true;
+      } else if (GDFLIX_HOSTS.test(target)) {
+        const out = await extractGdflix({
+          url: target,
+          providerContext,
+          signal,
+        });
+        resolved = out.streams;
+        if (out.reachedAnyMirror) reachedAnyHost = true;
+      } else if (FILEPRESS_HOSTS.test(target)) {
+        const out = await extractFilepress({
+          url: target,
+          providerContext,
+          signal,
+          isDownload,
+          preferredDomain,
+        });
+        resolved = out.streams;
+        if (out.reachedAnyMirror) reachedAnyHost = true;
       } else {
         const out = await extractHubcloud({
           url: target,
@@ -281,9 +435,19 @@ export const getStream = async function ({
           `${targets[0]} responded but exposed no downloadable files (the upload may have been removed). Try a different quality on this title.`,
         );
       }
-      const tried = mirrorCandidates(targets[0], preferredDomain).length;
+      const hosts = Array.from(
+        new Set(
+          targets.map((t) => {
+            try {
+              return new URL(t).host;
+            } catch {
+              return t;
+            }
+          }),
+        ),
+      ).join(", ");
       throw new Error(
-        `could not reach ${targets[0]} - all ${tried} HubCloud domains failed to connect. ` +
+        `could not reach any file host (${hosts}). ` +
           `This is usually ISP DNS blocking: try a VPN or 1.1.1.1 / 8.8.8.8 DNS, or set a working HubCloud domain in provider settings.`,
       );
     }

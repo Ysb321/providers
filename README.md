@@ -113,12 +113,30 @@ to file hosts rather than embedded players.
   running into the next heading. Each download heading becomes a `linkList`
   entry sorted best-quality-first; episode entries retain their `SxxExx`
   marker so a season's files stay distinguishable.
-- `stream.ts` – delegates to the shared `extractors/hubcloud.ts` (vendored from
-  Zenda-Cross/vega-providers), which already handles the
-  hubcloud -> vcloud -> final-file redirect chain, WAF solving, Gofile and
-  Pixeldrain. Exports `nonStreamableServer` so the app does not hand a
-  download-only mirror to the video player, and orders playable servers first
-  for streaming / download-optimised mirrors first for downloads.
+- `stream.ts` – routes each download link to the extractor that understands
+  that host, then orders playable servers first for streaming (and
+  download-optimised mirrors first for downloads). Exports
+  `nonStreamableServer` so the app does not hand a download-only mirror to the
+  video player.
+
+### File hosts
+
+ExtraMovies posts use different hosts depending on their age, so `stream.ts`
+dispatches by hostname rather than assuming one:
+
+| Host | Extractor |
+| --- | --- |
+| `hubcloud`, `hubdrive`, `vcloud`, `driveleech`, `driveseed` | `extractors/hubcloud.ts` |
+| `gdflix`, `gdlink`, `gdtot` | `extractors/gdflix.ts` |
+| `gofile.io` | `extractors/gofile.ts` |
+| `filepress`, `filebee` | followed to whichever host above it wraps |
+
+This matters because the layouts are completely different: newer posts link to
+HubCloud, while older ones (e.g. the 2016 Deadpool post) link only to GDFlix
+and FileBee. Sending a GDFlix page to the HubCloud extractor yields nothing.
+All links on a post are collected and tried in priority order (HubCloud,
+GDFlix, Gofile, then FilePress wrappers), so one dead host does not sink the
+title.
 - `settings.ts` – site mirror override (`extraMoviesBaseUrl`) and a HubCloud
   domain override (`extraMoviesHubcloudDomain`).
 
