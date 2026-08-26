@@ -7,5 +7,14 @@
     "type": "global",
     "hasSettings": true,
     "disabled": false
+  },
+  {
+    "display_name": "ExtraMovies",
+    "value": "extraMovies",
+    "version": "1.0",
+    "icon": "https://extramovies.miami/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
   }
 ]

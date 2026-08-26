@@ -8,6 +8,7 @@ Vega App provider extensions, based on the
 | Provider | Value | Site |
 | --- | --- | --- |
 | YoMovies | `yomovies` | https://yomovies.energy |
+| ExtraMovies | `extraMovies` | https://extramovies.miami |
 
 ## YoMovies provider
 
@@ -89,3 +90,43 @@ The site sits behind Cloudflare. The first browse in the app may pop the
 verification WebView; after it clears, the `cf_clearance` cookie is cached and
 browsing is seamless. Note that CLI tests (`npm run test:provider`) have no
 WebView, so they will report the Cloudflare block instead of results.
+
+
+## ExtraMovies provider
+
+`providers/extraMovies/` targets a WordPress/GridShow site whose posts link out
+to file hosts rather than embedded players.
+
+- `catalog.ts` – Latest plus category rows (Bollywood, Hollywood, Dual Audio,
+  Web Series, South) and a genre list.
+- `client.ts` – shared fetch layer with the same Cloudflare `openWebView`
+  solver and `cf_clearance` caching used by the yomovies provider, mirror
+  override support, and WordPress thumbnail stripping (`-360x540.jpg` ->
+  full-size poster).
+- `posts.ts` – `getPosts` / `getSearchPosts`. Category paging is `/page/N/`;
+  search is WordPress `?s=` (paged as `/page/N/?s=`). Taxonomy and utility
+  URLs (`/category/`, `/tag/`, `/how-to-download/`) are filtered out so nav
+  links never appear as results.
+- `meta.ts` – title, poster (skipping screenshots/logos), IMDb id, rating,
+  genres, cast and storyline. Info fields are read from individual block
+  elements rather than the flattened page text, which keeps a value from
+  running into the next heading. Each download heading becomes a `linkList`
+  entry sorted best-quality-first; episode entries retain their `SxxExx`
+  marker so a season's files stay distinguishable.
+- `stream.ts` – delegates to the shared `extractors/hubcloud.ts` (vendored from
+  Zenda-Cross/vega-providers), which already handles the
+  hubcloud -> vcloud -> final-file redirect chain, WAF solving, Gofile and
+  Pixeldrain. Exports `nonStreamableServer` so the app does not hand a
+  download-only mirror to the video player, and orders playable servers first
+  for streaming / download-optimised mirrors first for downloads.
+- `settings.ts` – mirror override (`extraMoviesBaseUrl`).
+
+### Vendored extractors
+
+`providers/extractors/{hubcloud,gofile}.ts` are copied from
+[Zenda-Cross/vega-providers](https://github.com/Zenda-Cross/vega-providers).
+They needed small type-only fixes to compile under this repo's `tsc --noEmit`
+gate (the upstream build uses esbuild, which strips types without checking):
+widening three `cleanHeaders` objects to `Record<string, string>` so keys can be
+deleted, and dropping type arguments on untyped optional-chained `kvStore.get`
+calls. Runtime behaviour is unchanged.
