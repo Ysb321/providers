@@ -241,20 +241,41 @@ export const getPosts = async function ({
 };
 
 /**
- * Search endpoints on this backend are POST-only, and the exact path varies
- * between deployments of the wefeed API. We try the known shapes in order and
- * remember whichever one answers, so later searches go straight to it.
+ * Search hosts. movieboxonline.net does not expose a search route at all
+ * (every path 404s, and its API has no search endpoint), but the same wefeed
+ * backend is deployed on sibling MovieBox domains that DO serve
+ * /newWeb/searchResult - which is exactly what the reference movieBoxWeb
+ * provider scrapes. Results carry a `detailPath`, which is host-independent,
+ * so a title found on a mirror still plays through this domain's play API.
+ */
+const SEARCH_HOSTS = [
+  "https://officialmoviebox.com",
+  "https://moviebox.ng",
+  "https://moviebox.ph",
+];
+
+const SEARCH_PATHS = [
+  "/newWeb/searchResult?keyword=",
+  "/searchResult?keyword=",
+  "/search?keyword=",
+];
+
+const SEARCH_ORIGIN_KEY = "movieBoxOnlineSearchOrigin";
+
+/**
+ * POST search endpoints, tried against the site's own API first.
+ * The reference movieBox provider confirms this backend's search is POST-only,
+ * so a GET probe returning 404 does not prove the route is absent.
  */
 const SEARCH_ENDPOINTS = [
   "/wefeed-h5api-bff/subject-api/search/v2",
   "/wefeed-h5api-bff/subject/search/v2",
   "/wefeed-mobile-bff/subject-api/search/v2",
-  "/wefeed-h5api-bff/subject-api/search",
 ];
 
 const SEARCH_ENDPOINT_KEY = "movieBoxOnlineSearchEndpoint";
 
-/** Pulls subjects out of any of the response shapes the API may return. */
+/** Pulls subjects out of any response shape the API is known to return. */
 function subjectsFromSearchPayload(data: any): Subject[] {
   if (!data) return [];
   const buckets: Subject[][] = [
@@ -267,8 +288,40 @@ function subjectsFromSearchPayload(data: any): Subject[] {
   ].filter(Array.isArray) as Subject[][];
 
   if (buckets.length) return buckets.flat();
-  // Unknown shape - fall back to a deep sweep for anything subject-like.
   return collectSubjects(data);
+}
+
+/**
+ * The reference provider talks to this backend with `fetch`, not axios, so we
+ * use the same transport here and only fall back to axios if fetch is absent.
+ */
+async function postJson(
+  url: string,
+  body: unknown,
+  providerContext: ProviderContext,
+  signal?: AbortSignal,
+): Promise<any> {
+  const headers = {
+    ...apiHeaders,
+    "Content-Type": "application/json",
+  };
+
+  if (typeof fetch === "function") {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  }
+
+  const res = await (providerContext.axios as any).post(url, body, {
+    headers,
+    signal,
+  });
+  return typeof res.data === "string" ? JSON.parse(res.data) : res.data;
 }
 
 async function searchViaApi({
@@ -282,7 +335,6 @@ async function searchViaApi({
   providerContext: ProviderContext;
   signal?: AbortSignal;
 }): Promise<Post[]> {
-  const { axios } = providerContext;
   const baseUrl = await getBaseUrl(providerContext);
 
   let endpoints = [...SEARCH_ENDPOINTS];
@@ -300,33 +352,23 @@ async function searchViaApi({
     page: Math.max(1, page),
     perPage: PAGE_SIZE,
     keyword: query,
-    // Omitting tabId searches everything; some builds require the field.
     tabId: "",
   };
 
   for (const endpoint of endpoints) {
     try {
-      const res = await axios.post(apiUrl(baseUrl, endpoint), body, {
-        headers: {
-          ...apiHeaders,
-          "Content-Type": "application/json",
-          Referer: baseUrl + "/",
-        },
+      const payload = await postJson(
+        apiUrl(baseUrl, endpoint),
+        body,
+        providerContext,
         signal,
-        validateStatus: (status: number) => status < 500,
-      });
-      if (res.status >= 400) continue;
-
-      const payload =
-        typeof res.data === "string" ? JSON.parse(res.data) : res.data;
+      );
       if (!payload || (payload.code !== undefined && payload.code !== 0)) {
         continue;
       }
-
       const posts = subjectsFromSearchPayload(payload.data ?? payload)
         .map(toPost)
         .filter((p): p is Post => Boolean(p));
-
       if (posts.length) {
         try {
           await providerContext.kvStore.set(SEARCH_ENDPOINT_KEY, endpoint);
@@ -335,18 +377,81 @@ async function searchViaApi({
         }
         return posts;
       }
-    } catch (err) {
-      // Wrong path/method for this deployment - try the next candidate.
+    } catch {
       continue;
     }
   }
-
   return [];
 }
 
 /**
- * Last resort: the trending feed is the one list endpoint that reliably works,
- * so match against it locally. Better a few relevant hits than a blank screen.
+ * Scrapes /newWeb/searchResult on a sibling MovieBox deployment. This is the
+ * mechanism the reference movieBoxWeb provider uses and is the most reliable
+ * path, since this domain itself has no search route.
+ */
+async function searchViaMirror({
+  query,
+  providerContext,
+  signal,
+}: {
+  query: string;
+  providerContext: ProviderContext;
+  signal?: AbortSignal;
+}): Promise<Post[]> {
+  let hosts = [...SEARCH_HOSTS];
+  try {
+    const remembered =
+      await providerContext.kvStore.get<string>(SEARCH_ORIGIN_KEY);
+    if (remembered) {
+      hosts = [remembered, ...hosts.filter((h) => h !== remembered)];
+    }
+  } catch {
+    /* ignore */
+  }
+
+  for (const host of hosts) {
+    for (const path of SEARCH_PATHS) {
+      try {
+        const html = await getHtml({
+          url: `${host}${path}${encodeURIComponent(query)}`,
+          providerContext,
+          signal,
+          referer: host + "/",
+        });
+        if (!html) continue;
+
+        const posts: Post[] = [];
+        const seen = new Set<string>();
+        for (const subject of collectSubjects(
+          parseNuxtData(html, providerContext.cheerio),
+        )) {
+          const post = toPost(subject);
+          if (post && !seen.has(post.link)) {
+            seen.add(post.link);
+            posts.push(post);
+          }
+        }
+
+        if (posts.length) {
+          try {
+            await providerContext.kvStore.set(SEARCH_ORIGIN_KEY, host);
+          } catch {
+            /* ignore */
+          }
+          return posts;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+  return [];
+}
+
+/**
+ * Last resort: match locally against the trending feed. This only finds a
+ * title if it happens to be trending, so it is a genuine fallback rather than
+ * a guarantee of results.
  */
 async function searchTrendingLocally({
   query,
@@ -395,27 +500,19 @@ export const getSearchPosts = async function ({
     const query = (searchQuery || "").trim();
     if (!query) return [];
 
-    // 1) POST search API (the site's real mechanism).
+    // 1) POST search API on this domain (if this build exposes one).
     const viaApi = await searchViaApi({ query, page, providerContext, signal });
     if (viaApi.length) return viaApi;
 
     if (page > 1) return [];
 
-    // 2) Server-rendered search page, if this build exposes one.
-    for (const path of [
-      `/search?keyword=${encodeURIComponent(query)}`,
-      `/searchResult?keyword=${encodeURIComponent(query)}`,
-      `/newWeb/searchResult?keyword=${encodeURIComponent(query)}`,
-    ]) {
-      try {
-        const viaPage = await fetchFromPage({ path, providerContext, signal });
-        if (viaPage.length) return viaPage;
-      } catch {
-        continue;
-      }
-    }
+    // 2) Sibling MovieBox deployment that serves a real search page. Results
+    //    are keyed by detailPath, which works against this domain's play API.
+    const viaMirror = await searchViaMirror({ query, providerContext, signal });
+    if (viaMirror.length) return viaMirror;
 
-    // 3) Local match against trending so search is never silently empty.
+    // 3) Local match against trending. This only helps when the title happens
+    //    to be trending, so it is a genuine last resort - not a guarantee.
     return await searchTrendingLocally({ query, providerContext, signal });
   } catch (err) {
     throwProviderError(PROVIDER_NAME, "getSearchPosts", err);

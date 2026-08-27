@@ -201,30 +201,32 @@ URL is rebuilt from `detailPath`.
 
 ### Search
 
-Search on this backend is a **POST** endpoint, not a GET - probing it with GET
-returns `404 page not found`, which is misleading. The exact path also varies
-between deployments of the wefeed API, so `getSearchPosts` runs a cascade:
+`movieboxonline.net` has **no search of its own** - every candidate route
+(`/search`, `/searchResult`, `/newWeb/searchResult`) returns the site's 404
+page, and its JSON API exposes no search endpoint.
 
-1. **POST** each known endpoint shape in turn
-   (`/wefeed-h5api-bff/subject-api/search/v2` and siblings). Whichever one
-   answers is cached in `kvStore`, so later searches hit it first.
-2. If none answer, try the server-rendered search pages.
-3. Otherwise match locally against the trending feed, so search degrades to a
-   few relevant results instead of a blank screen.
+Note that a GET probe is not proof on this backend: the wefeed search API is
+**POST-only**, so GET returns `404 page not found` even where a route exists.
 
-Response parsing accepts every shape the API is known to return
-(`results[].subjects`, `subjectList`, `subjects`, `items`) and falls back to a
-deep sweep for subject-like objects.
-- `meta.ts` – builds `linkList` from the season/episode resource map. Each link
-  is an encoded playback descriptor (`subjectId`, `detailPath`, `se`, `ep`)
-  rather than a URL, which is what the play API needs.
-- `stream.ts` – calls the play API, skips `vipLocked` sources, attaches
-  subtitles from the caption endpoint, and sets `Referer`/`Origin` to the site
-  (the aoneroom CDN validates them). Highest resolution first for playback;
-  progressive mp4 first for downloads.
+`getSearchPosts` therefore cascades:
+
+1. **POST** the known search endpoints against this domain, caching whichever
+   one answers in `kvStore`. Uses `fetch` (the transport the reference
+   `movieBoxWeb` provider uses for this backend) with an axios fallback.
+2. **Sibling MovieBox deployments** (`officialmoviebox.com` and friends) that
+   do serve `/newWeb/searchResult`. This is the mechanism the reference
+   provider relies on. Results are keyed by `detailPath`, which is
+   host-independent, so a title found on a mirror still plays through this
+   domain's play API. The working origin is cached.
+3. **Local match against trending** - a genuine last resort that only finds a
+   title if it happens to be trending.
 
 ### Known limitations
 
 Some titles return `hasResource: false` from the play API even when the catalog
 advertises `hasResource: true` - these are region- or client-gated and produce a
 clear error rather than a blank screen.
+
+Search depends on a sibling deployment being reachable (step 2 above). If those
+mirrors are blocked for you, search falls back to trending-only matching and
+will legitimately return nothing for titles that are not currently trending.
