@@ -11,6 +11,8 @@
     "test:provider": "node tests/test-provider.js",
     "test:net77": "node tests/net77/run.js",
     "test:net77:live": "node tests/net77/live-check.js",
+    "test:redflix": "node tests/redflix/run.js",
+    "test:redflix:live": "node tests/redflix/live-check.js",
     "build": "node build-bundled.js",
     "build:dev": "cross-env SKIP_MINIFY=true node build-bundled.js",
     "dev": "node dev-server.js",

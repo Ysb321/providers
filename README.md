@@ -11,6 +11,7 @@ Vega App provider extensions, based on the
 | ExtraMovies | `extraMovies` | https://extramovies.miami |
 | MovieBox Online | `movieBoxOnline` | https://movieboxonline.net |
 | NetMirror | `net77` | https://net77.cc |
+| Redflix | `redflix` | https://redflix.club |
 
 ## YoMovies provider
 
@@ -353,3 +354,160 @@ every native endpoint. Where the MP4 fallback also has no copy, `getStream`
 raises a clear error instead of handing the player a decoy. Series episodes
 depend on the fallback echoing the right episode, so a gated deep episode may
 legitimately return nothing.
+
+---
+
+## Redflix provider
+
+`providers/redflix/` targets Redflix (`redflix.club`). Unlike the other
+providers here, Redflix **hosts no media of its own**: it is a Next.js
+front-end keyed entirely on TMDB ids that embeds third-party players. Every
+catalogue tile links to `/play?id=<tmdbId>&type=movie|tv`, and the playback
+page offers ~14 switchable sources (VidPlay, Fast, Hindi, Redflix, Cinezo,
+Orion, Premium, Vidgod, Bolt, Mega, Nova, Alpha, ...).
+
+So this provider scrapes Redflix for *discovery* and resolves *playback*
+through the same embed backends the site itself uses.
+
+### Endpoints (verified live)
+
+Redflix's own pages:
+
+| Purpose | Path | Notes |
+| --- | --- | --- |
+| Home rails | `/` | TMDB ids in `/play?id=` links |
+| Movies grid | `/movies` | infinite scroll |
+| TV grid | `/tv-shows` | infinite scroll |
+| Search | `/browse?q=` | 13 hits for "breaking bad" |
+| Playback | `/play?id=&type=&season=&episode=` | S3E7 renders correctly |
+
+`robots.txt` names `redflix.co` as the canonical domain and disallows
+`/play`, `/movies`, `/tv-shows`, `/browse` and `/api/`. There is no public
+JSON API on the site itself — `/api/*` and `/tv`, `/search` all 404.
+
+**Pagination gotcha:** `/movies?page=2` returns page 1 again (verified) — the
+grids are infinite-scroll, not query-paged. Catalogue paging therefore goes
+through the keyless TMDB mirror the embed backend already uses:
+
+| Purpose | Endpoint |
+| --- | --- |
+| Trending | `db.speedracelight.com/3/trending/{all\|movie\|tv}/day?page=` |
+| Lists | `/3/{movie\|tv}/{popular\|top_rated\|...}?page=` |
+| Genres | `/3/discover/{movie\|tv}?with_genres=&page=` |
+| Search | `/3/search/multi?query=&page=` |
+| Detail | `/3/{movie\|tv}/{id}?append_to_response=external_ids,credits` |
+| Season | `/3/tv/{id}/season/{n}` |
+| Episode | `/3/tv/{id}/season/{n}/episode/{e}` |
+
+No API key is required on that mirror. Search still prefers Redflix's own
+`/browse?q=` page, because Redflix only lists titles it can actually play; the
+mirror is the fallback when the site is unreachable.
+
+### Playback
+
+Two source families are resolved in parallel, both plain HTTP:
+
+**Videasy** (`api.speedracelight.com`) — eight upstream servers behind one API
+(Yoru/cdn, Breach/m4uhd, Neon/vsrc, Vyse+Fade/hdmovie, Killjoy/meine,
+Omen/lamovie, Raze/superflix), covering Original, Hindi, German, Spanish and
+Portuguese audio.
+
+```
+GET /seed?mediaId={tmdbId}                    -> { seed, ttlMs: 30000 }
+GET /{server}/sources-with-title?title=&mediaType=&year=
+      &episodeId=&seasonId=&tmdbId=&imdbId=&enc=2&seed=   -> ciphertext
+POST enc-dec.app/api/dec-videasy {text,id,seed}           -> sources+subtitles
+```
+
+Two things bite here. The **seed is IP-bound and expires in ~30 s**, so it is
+fetched immediately before the source calls that consume it (a stale seed comes
+back as plain `{"error":"STREAMCRYPTO_SEED_INVALID"}`, which is detected rather
+than fed to the decryptor). And the **title must be double URL-encoded** —
+`Game of Thrones` → `Game%2520of%2520Thrones`.
+
+**VidFast** (`vidfast.vc`; `vidfast.pro` 302s there) — scrape the inline
+`"en"`/`"token"` blob from the player page, `enc-vidfast` it into
+`{servers, stream, token}`, POST `servers` with `X-CSRF-Token`, decrypt the
+server list, then POST `stream/{data}` per server and decrypt again.
+
+Both families return AES/WASM-encrypted payloads. That crypto cannot run in the
+provider sandbox (no `crypto`, no WASM, no `Buffer`), so decoding is delegated
+to the public `enc-dec.app` helper — the same service the upstream `autoEmbed`
+provider uses. It is overridable in settings for anyone self-hosting
+[EncDecEndpoints](https://github.com/smy778/EncDecEndpoints).
+
+### Getting the right episode, and only real links
+
+Two guards do the heavy lifting:
+
+1. **Episode identity is checked against TMDB first.** Aggregators commonly
+   fall back to S1E1 (or the pilot) when an episode is unknown, which plays the
+   wrong thing while reporting success. Before any embed provider is asked,
+   `/3/tv/{id}/season/{s}/episode/{e}` must exist *and* echo back the same
+   season/episode. Verified live: S3E7 returns "One Minute" with
+   `episode_number: 7`, while S3E42 returns `{"success":false}`.
+2. **Every returned link is fetched before it is offered.** HLS must come back
+   as a real `#EXTM3U` carrying variants or segments — a body that parses but
+   contains neither is an empty shell and is dropped. Progressive files are
+   range-requested and rejected if the response is `text/html` (an error page
+   rather than video). If nothing survives, `getStream` throws instead of
+   handing the player a dead link.
+
+Streams carry `Referer` and a browser UA but deliberately **no `Origin`**:
+these CDNs treat a request carrying one as a browser XHR and apply a CORS
+allow-list, answering 403 to the player's segment requests while a one-shot
+download still succeeds — the classic "download works, streaming doesn't" trap.
+
+### Conflicts with reference implementations
+
+- **`ythd.org/embed/{tmdbId}` is movie-only.** The `mediaflow-proxy` VidFast
+  extractor (Python and Rust ports both) parses the TMDB id out of the URL and
+  always requests `/embed/{id}`, discarding season/episode. Live,
+  `ythd.org/embed/1396` returns **Mirror (1975)** — a film — not Breaking Bad,
+  because that path treats the id as a *movie* id. TV needs
+  `/embed/tv/{id}/{s}/{e}`. Ported as-is, that extractor silently serves an
+  unrelated film for every TV request. This provider does not use that chain.
+- **`vidlink.pro/api/b/...` is dead.** The widely-copied VidLink extractor
+  (AES-256-CBC with a hard-coded key) returns `null` for both movie and TV
+  today, so VidLink is not wired up.
+- **`Zenda-Cross/vega-providers`' `autoEmbed`** was the most useful reference —
+  the Videasy server table and the enc-dec flow follow it. Its use of the
+  global `fetch` and its `cineby.at` origin were replaced with the injected
+  `axios` and the player origins this site actually uses.
+- **`redflix.py` (TVBox spiders)** targets `redflix.co` and only ever returns
+  embed *page* URLs (`parse: 1`) for an external player to render — not
+  playable media, so it could not be used directly.
+
+### Files
+
+- `client.ts` – endpoints, settings, HTTP helpers, link-token codec.
+- `catalog.ts` – trending/popular/top-rated rows plus TMDB genre rows.
+- `posts.ts` – `getPosts` / `getSearchPosts` (site search, TMDB fallback).
+- `meta.ts` – `getMeta`, including `imdbId` for Cinemeta enrichment.
+- `episodes.ts` – `getEpisodes`; unaired episodes are filtered out.
+- `stream.ts` – `getStream`: episode check, both source families, verification.
+- `settings.ts` – mirror override, per-source toggles, verification toggle,
+  decryption-helper URL.
+
+### Tests
+
+```bash
+npm run test:redflix        # offline: replays captured responses (93 assertions)
+npm run test:redflix:live   # online: probes each link for real media
+```
+
+The live script additionally resolves two different episodes of the same show
+and warns if they come back as the same file — the check that catches a backend
+silently serving one episode for all of them.
+
+### Known limitations
+
+Redflix carries no media itself, so availability is entirely down to the embed
+backends. Titles missing from their libraries produce a clear error rather than
+a dead link. The Videasy seed is IP-bound with a ~30 s TTL, so playback must be
+resolved from the same network that will fetch the stream; the app satisfies
+this naturally, but a proxy between resolution and playback will not.
+
+Only Videasy and VidFast are wired up. The remaining sources exposed on the
+Redflix player each need their own reverse-engineering and are not implemented;
+VidLink is stubbed out entirely because its API is currently dead.

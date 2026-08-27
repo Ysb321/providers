@@ -34,5 +34,14 @@
     "type": "global",
     "hasSettings": true,
     "disabled": false
+  },
+  {
+    "display_name": "Redflix",
+    "value": "redflix",
+    "version": "1.0",
+    "icon": "https://redflix.club/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
   }
 ]
