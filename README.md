@@ -196,9 +196,25 @@ URL is rebuilt from `detailPath`.
   Listing/detail pages embed their state in `#__NUXT_DATA__` as an
   index-referenced array, so it must be hydrated before it can be read.
 - `posts.ts` – Trending uses the JSON endpoint (paged). Movie/TV/Animation tabs
-  and search read the rendered page's Nuxt state, since this domain exposes no
-  public JSON search endpoint. Titles with `hasResource: false` are dropped so
-  unplayable entries never reach the catalog.
+  read the rendered page's Nuxt state. Titles with `hasResource: false` are
+  dropped so unplayable entries never reach the catalog.
+
+### Search
+
+Search on this backend is a **POST** endpoint, not a GET - probing it with GET
+returns `404 page not found`, which is misleading. The exact path also varies
+between deployments of the wefeed API, so `getSearchPosts` runs a cascade:
+
+1. **POST** each known endpoint shape in turn
+   (`/wefeed-h5api-bff/subject-api/search/v2` and siblings). Whichever one
+   answers is cached in `kvStore`, so later searches hit it first.
+2. If none answer, try the server-rendered search pages.
+3. Otherwise match locally against the trending feed, so search degrades to a
+   few relevant results instead of a blank screen.
+
+Response parsing accepts every shape the API is known to return
+(`results[].subjects`, `subjectList`, `subjects`, `items`) and falls back to a
+deep sweep for subject-like objects.
 - `meta.ts` – builds `linkList` from the season/episode resource map. Each link
   is an encoded playback descriptor (`subjectId`, `detailPath`, `se`, `ep`)
   rather than a URL, which is what the play API needs.
@@ -207,7 +223,7 @@ URL is rebuilt from `detailPath`.
   (the aoneroom CDN validates them). Highest resolution first for playback;
   progressive mp4 first for downloads.
 
-### Known limitation
+### Known limitations
 
 Some titles return `hasResource: false` from the play API even when the catalog
 advertises `hasResource: true` - these are region- or client-gated and produce a
