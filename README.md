@@ -10,6 +10,7 @@ Vega App provider extensions, based on the
 | YoMovies | `yomovies` | https://yomovies.energy |
 | ExtraMovies | `extraMovies` | https://extramovies.miami |
 | MovieBox Online | `movieBoxOnline` | https://movieboxonline.net |
+| NetMirror | `net77` | https://net77.cc |
 
 ## YoMovies provider
 
@@ -230,3 +231,125 @@ clear error rather than a blank screen.
 Search depends on a sibling deployment being reachable (step 2 above). If those
 mirrors are blocked for you, search falls back to trending-only matching and
 will legitimately return nothing for titles that are not currently trending.
+
+---
+
+## NetMirror provider
+
+`providers/net77/` targets NetMirror (`net77.cc`), a mirror that re-serves the
+Netflix and Prime Video catalogues. Everything is JSON, so this provider calls
+APIs rather than scraping markup.
+
+**The domain rotates.** NetMirror moves every few weeks
+(`net22` → `net11` → `net27` → `net77` …). `net77.cc` is the mirror this was
+built against; set a newer one in provider settings when it moves.
+
+### Endpoints (verified against the live site)
+
+Netflix lives at the root, Prime Video under `/pv`:
+
+| Purpose | Netflix | Prime Video |
+| --- | --- | --- |
+| Search | `/search.php?s=&t=` | `/pv/search.php?s=&t=` |
+| Details | `/post.php?id=&t=` | `/pv/post.php?id=&t=` |
+| Episodes | `/episodes.php?s=&series=&t=&page=` | `/pv/episodes.php?…` |
+| Playlist | `/playlist.php?id=&t=` | `/pv/playlist.php?id=&t=` |
+
+The `/mobile/*` variants of these paths answer *"Site Direct Access Not Allowed
+in Mobiles"* to a desktop user-agent, so the non-mobile paths are used.
+
+### Guest session
+
+`post.php` replies `{"status":"n","error":"Invalid User"}` without a session
+cookie. Posting to `/verify.php` returns a `t_hash_t` cookie; the captcha field
+is not validated server-side, which is the same handshake the official app
+performs. The cookie is cached in `kvStore` for 12 h, and re-negotiated
+automatically when the backend rejects it. If Cloudflare fronts the handshake,
+it falls back to `openWebView` with `waitForCookie: "t_hash_t"`.
+
+### Playback: the placeholder trap
+
+This is the thing that makes or breaks the provider.
+
+`playlist.php` happily returns a signed HLS master for any title, and it *looks*
+correct - the audio tracks and subtitles carry the real content id. But for
+titles that need an account, every **video** rendition points at a shared asset:
+
+```
+#EXT-X-MEDIA:TYPE=AUDIO,...,URI=".../files/0LOZI9HQ…/a/3/3.m3u8"   <- real title
+#EXT-X-STREAM-INF:...,RESOLUTION=1920x1080
+https://s21.freecdn4.top/files/220884/1080p/1080p.m3u8?in=unknown::su  <- decoy
+```
+
+`220884` is a ~10 minute "sign in to continue" reel. A provider that returns
+this link reports success and then plays the wrong video. So every master is
+fetched and checked before it is offered, and **only the variant lines are
+inspected** - judging by the audio URIs would pass a placeholder manifest.
+
+When the native master is a placeholder, `getStream` falls through:
+
+1. **`playlist.php`** – adaptive HLS, multi-language audio, full subtitle list.
+2. **NewTV API** – the flow the Android app uses. A rotating pool of
+   `mobiledetect*` hosts returns a base64 `token_hash` naming the current media
+   API (`/checknewtv.php` → `https://tv.imgcdn.kim`), which serves
+   `/newtv/player.php?id=…`. Different host, so it sometimes works when the
+   browser endpoint will not. Also verified against the placeholder.
+3. **`net27.cc/api/embed-tmdb/<tmdbId>`** – progressive MP4s at 360/480/720/1080.
+   Keyed by TMDB id, so the title is resolved through TMDB first (cached).
+
+### Episode selection in the fallback
+
+The MP4 API selects an episode with **`se`/`ep`**, not `s`/`e`:
+
+```
+/api/embed-tmdb/1396?type=tv&se=5&ep=14   -> currentSeason 5, currentEpisode 14
+/api/embed-tmdb/1396?type=tv&s=5&e=14     -> currentSeason 1, currentEpisode 1
+```
+
+The abbreviated form is silently ignored and yields S1E1 — which would play the
+wrong episode while reporting success. The provider therefore verifies that the
+response echoes the requested season/episode, retries once with the legacy
+names, and **returns nothing rather than the wrong episode** if it still
+mismatches.
+
+### Required playback headers
+
+The CDNs (`*.nm-cdn*.top`, `*.freecdn*.top`) return 404 without a `Referer`, so
+every returned stream carries one plus the `hd=on` cookie. No `Origin` is sent:
+these hosts treat a request carrying one as a browser XHR and apply a CORS
+allow-list. MP4 fallback links use `Referer: https://videodownloader.site/`,
+which is what their anti-hotlink check accepts.
+
+### Files
+
+- `client.ts` – base URL/settings, guest session, the `*.php` request helpers,
+  NewTV discovery, TMDB resolution, and the link-token codec.
+- `catalog.ts` – Netflix / Prime Video rows plus alphabetical browse.
+- `posts.ts` – `getPosts` / `getSearchPosts`. Search queries both catalogues and
+  merges. Browse walks the alphabet through `search.php`, since the site has no
+  numbered listing endpoint.
+- `meta.ts` – `getMeta`. Also resolves `imdbId`/`tmdbId` from the title so the
+  app can enrich the entry from Cinemeta (the site never exposes one).
+- `episodes.ts` – `getEpisodes`, following `nextPageShow` pagination.
+- `stream.ts` – `getStream`, implementing the three-stage cascade above.
+- `settings.ts` – mirror override, MP4-fallback toggle, optional TMDB key.
+
+### Tests
+
+```bash
+node tests/net77/run.js     # offline: replays captured responses
+```
+
+`tests/net77/` replays real responses captured from the live site, so the
+placeholder detection, episode verification and header requirements are
+exercised without network access. `tests/net77/live-check.js` is the online
+counterpart: it hits the real site and probes each returned link to report
+whether it actually serves media or the placeholder.
+
+### Known limitations
+
+Titles that NetMirror gates behind an account return the placeholder reel from
+every native endpoint. Where the MP4 fallback also has no copy, `getStream`
+raises a clear error instead of handing the player a decoy. Series episodes
+depend on the fallback echoing the right episode, so a gated deep episode may
+legitimately return nothing.

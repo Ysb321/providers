@@ -9,6 +9,8 @@
   "scripts": {
     "test": "node tests/test-providers.js",
     "test:provider": "node tests/test-provider.js",
+    "test:net77": "node tests/net77/run.js",
+    "test:net77:live": "node tests/net77/live-check.js",
     "build": "node build-bundled.js",
     "build:dev": "cross-env SKIP_MINIFY=true node build-bundled.js",
     "dev": "node dev-server.js",

@@ -25,5 +25,14 @@
     "type": "global",
     "hasSettings": true,
     "disabled": false
+  },
+  {
+    "display_name": "NetMirror",
+    "value": "net77",
+    "version": "1.0",
+    "icon": "https://net77.cc/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
   }
 ]
