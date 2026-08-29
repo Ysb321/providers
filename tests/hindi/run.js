@@ -717,6 +717,97 @@ const restoreFetch = installFetchStub();
     );
   });
 
+  await section("hdhub4u: site cookie must not reach file hosts", async () => {
+    // The site-gate cookie (xla=s4t) belongs to hdhub4u only. The shared
+    // hubcloud extractor injects its own bundle - including cf_clearance -
+    // ONLY when headers.Cookie is unset, so forwarding the site cookie
+    // suppressed the clearance and every host 403'd.
+    const pages = {
+      "hubdrive.tips":
+        '<html><body><h5><a href="https://hubcloud.cx/drive/abc123">[HubCloud Server]</a></h5></body></html>',
+      "hubcloud.cx":
+        "<html><body><script>var url='https://gamerxyt.com/hubcloud.php?host=hubcloud&id=abc123&token=x';</script></body></html>",
+      "gamerxyt.com":
+        '<html><body><a class="btn btn-success btn-lg h6" href="https://f8.r2.cloudflarestorage.com/hub/abc?X-Amz-Signature=z">Download [FSL Server]</a></body></html>',
+    };
+    // Behaves like the real CDN: challenge unless cf_clearance is present.
+    const get = async (url, cfg = {}) => {
+      const cookie = (cfg.headers || {}).Cookie || "";
+      if (/hubcloud|gamerxyt/.test(url) && !/cf_clearance/.test(cookie)) {
+        const err = new Error("Request failed with status code 403");
+        err.response = { status: 403, data: "challenge" };
+        throw err;
+      }
+      for (const key of Object.keys(pages)) {
+        if (url.includes(key)) return { status: 200, data: pages[key], headers: {} };
+      }
+      return { status: 404, data: "", headers: {} };
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = async (input) => {
+      const url = typeof input === "string" ? input : input?.url;
+      return {
+        ok: true,
+        status: 200,
+        url,
+        headers: { get: () => null },
+        text: async () => {
+          for (const key of Object.keys(pages)) {
+            if (String(url).includes(key)) return pages[key];
+          }
+          return "";
+        },
+        json: async () => ({}),
+      };
+    };
+
+    const store = new Map();
+    let streams = [];
+    let message = "";
+    try {
+      streams = await hh.stream.getStream({
+        link: "https://hubdrive.tips/file/2430087611",
+        type: "movie",
+        signal,
+        providerContext: {
+          axios: Object.assign(get, {
+            get,
+            post: async () => ({ status: 404, data: "", headers: {} }),
+            head: async () => ({ status: 200, data: "", headers: {} }),
+          }),
+          cheerio: require("cheerio"),
+          commonHeaders: {},
+          openWebView: async () => {
+            throw new Error("no webview");
+          },
+          kvStore: {
+            get: async (k) => store.get(k),
+            set: async (k, v) => void store.set(k, v),
+            delete: async (k) => store.delete(k),
+            keys: async () => Array.from(store.keys()),
+            clear: async () => store.clear(),
+          },
+        },
+      });
+    } catch (err) {
+      message = err.message;
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    check("resolves through the CDN challenge", streams.length > 0, message);
+    check(
+      "reaches the real media file",
+      streams.some((s) => /cloudflarestorage|r2\.dev|pixeldrain/i.test(s.link)),
+      streams.map((s) => s.link.slice(0, 50)).join(" | "),
+    );
+    check(
+      "no intermediate page returned as a stream",
+      !streams.some((s) => /hubdrive|gamerxyt|hubcloud\.cx\/drive/i.test(s.link)),
+    );
+  });
+
   await section("hdhub4u: resilience", async () => {
     const { context, calls } = createContext({ mirrorDown: true });
     const posts = await hh.posts.getPosts({

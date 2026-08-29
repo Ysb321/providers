@@ -7,12 +7,12 @@ import {
   PROVIDER_NAME,
   absolutise,
   decodeBase64,
+  extractorHeaders,
   fetchPage,
   isFileHost,
   isPackLink,
   isPlayerOnly,
   isRedirector,
-  pageHeaders,
   qualityFromText,
 } from "./client";
 
@@ -96,7 +96,9 @@ async function resolveHost({
   isDownload?: boolean;
 }): Promise<Stream[]> {
   const { axios, cheerio, commonHeaders } = providerContext;
-  const headers = { ...pageHeaders, ...(commonHeaders || {}) };
+  // Fresh, cookie-free headers per host: see extractorHeaders() for why
+  // forwarding the site-gate cookie breaks HubCloud.
+  const headers = extractorHeaders(commonHeaders);
 
   // A redirector hides the real host - resolve it before dispatching.
   if (isRedirector(url)) {

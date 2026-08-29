@@ -74,6 +74,9 @@ async function resolveHost({
   isDownload?: boolean;
 }): Promise<Stream[]> {
   const { axios, cheerio, commonHeaders } = providerContext;
+  // Build a fresh object per host - the shared extractors mutate the headers
+  // they are given (adding cookies/user-agents), and reusing one instance
+  // leaks that state into the next host we try.
   const headers = { ...pageHeaders, ...(commonHeaders || {}) };
 
   try {

@@ -244,6 +244,32 @@ export function isPlayerOnly(url: string): boolean {
   return /(hdstream4u|hubstream)\./i.test(url);
 }
 
+/**
+ * Headers for requests to the file hosts (HubCloud, GDFlix, ...).
+ *
+ * Deliberately carries **no Cookie**. The site-gate cookie above belongs to
+ * hdhub4u only, and the shared hubcloud extractor injects its own cookie
+ * bundle (including `cf_clearance`) *only when `Cookie` is unset*:
+ *
+ *     if (!headers["Cookie"]) headers["Cookie"] = "...; cf_clearance=...";
+ *
+ * Forwarding `xla=s4t` therefore suppresses that clearance cookie and the CDN
+ * answers with a challenge instead of the download page, which surfaces as
+ * "every file host failed to resolve". Each call must also get a *fresh*
+ * object, because the extractors mutate the headers they are handed.
+ */
+export function extractorHeaders(
+  commonHeaders?: Record<string, string>,
+): Record<string, string> {
+  return {
+    Accept:
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "User-Agent": DESKTOP_UA,
+    ...(commonHeaders || {}),
+  };
+}
+
 const B64_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 

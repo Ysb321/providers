@@ -580,6 +580,22 @@ Without those, `getMeta` parses a perfectly valid page, finds nothing playable,
 and fails with *"no download links found"*. Both headers are now sent on every
 request (the reference provider sends the same pair).
 
+### HDHub4u: the site cookie must not reach the file hosts
+
+`Cookie: xla=s4t` unlocks the download block **on hdhub4u only**. It must not
+be forwarded to HubCloud/GDFlix, because the shared extractor injects its own
+cookie bundle - including `cf_clearance` - *only when `Cookie` is unset*:
+
+```js
+if (!headers["Cookie"]) headers["Cookie"] = "...; xla=s4t; cf_clearance=...";
+```
+
+Passing the site cookie through therefore suppresses the clearance cookie, the
+CDN answers with a challenge, and every host 403s — surfacing as *"every file
+host for this title failed to resolve"*. `extractorHeaders()` builds a
+cookie-free header set, fresh per host (the extractors mutate what they are
+handed, so a shared object leaks state between attempts).
+
 ### HDHub4u link hosts
 
 Three kinds of link appear in that block, and they need different handling:
