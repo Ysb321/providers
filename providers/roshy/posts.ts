@@ -1,20 +1,18 @@
 import { Post, ProviderContext } from "../types";
-import { getBaseUrl } from "../getBaseUrl";
-import { throwProviderError } from "../providerErrors";
 
-const providerValue = "roshy";
-// Leave empty so the template does not accidentally scrape the adult domain.
-// Set this (or the url in urls.json) to your intended non-adult site before use.
+// The intended non-adult movie/TV site's base URL. Set this (or configure
+// `baseUrlOverride` in provider settings) before using the provider. It is
+// intentionally left blank so this scaffold is not wired to any live site.
 const defaultBaseUrl = "";
 
-// WordPress movie/TV sites usually render post cards with one of these classes.
-// When the intended non-adult site is wired up, adjust these selectors to match.
+// WordPress movie/TV themes commonly render post cards with one of these
+// selectors. Adjust to match the target site.
 const CARD_SELECTOR =
   ".movie-card, .film-item, .post-item, article, .post, .film-list .item";
 const TITLE_SELECTOR =
-  ".movie-card-title, .film-name, .post-title, h2.entry-title, .title, h3";
+  ".movie-card-title, .film-name, .post-title, h2.entry-title, h3";
 const LINK_SELECTOR =
-  "a.film-poster, a.movie-card, a.post-title, .post-thumbnail a, a.thumbnail, h2.entry-title a, a";
+  "a.film-poster, a.movie-card, a.post-title, h2.entry-title a, .post-thumbnail a, a";
 const IMAGE_SELECTOR =
   "img.poster, img.film-poster, img.thumb, img.attachment-post-thumbnail, img";
 
@@ -76,14 +74,16 @@ async function fetchPosts(
 
     return posts;
   } catch (error: any) {
-    throwProviderError("Roshy", "posts", error);
+    // eslint-disable-next-line no-console
+    console.error(`Roshy posts error: ${error?.message || error}`);
     return [];
   }
 }
 
-export async function getPosts({
+export const getPosts = async function ({
   filter,
   page,
+  providerValue,
   signal,
   providerContext,
 }: {
@@ -93,19 +93,24 @@ export async function getPosts({
   signal: AbortSignal;
   providerContext: ProviderContext;
 }): Promise<Post[]> {
-  const baseUrl = (await getBaseUrl(providerValue)) || defaultBaseUrl;
+  const baseUrl =
+    (await providerContext.kvStore?.get<string>("baseUrlOverride")) ||
+    defaultBaseUrl;
+  if (!baseUrl) return [];
+
   const cleanFilter = filter ? filter.replace(/\/+$/, "") : "";
-  const pageUrl =
+  const url =
     page <= 1
       ? `${baseUrl}${cleanFilter}/`
       : `${baseUrl}${cleanFilter}/page/${page}/`;
 
-  return fetchPosts(pageUrl, baseUrl, signal, providerContext);
-}
+  return fetchPosts(url, baseUrl, signal, providerContext);
+};
 
-export async function getSearchPosts({
+export const getSearchPosts = async function ({
   searchQuery,
   page,
+  providerValue,
   signal,
   providerContext,
 }: {
@@ -115,12 +120,16 @@ export async function getSearchPosts({
   signal: AbortSignal;
   providerContext: ProviderContext;
 }): Promise<Post[]> {
-  const baseUrl = (await getBaseUrl(providerValue)) || defaultBaseUrl;
+  const baseUrl =
+    (await providerContext.kvStore?.get<string>("baseUrlOverride")) ||
+    defaultBaseUrl;
+  if (!baseUrl) return [];
+
   const encodedQuery = encodeURIComponent(searchQuery.trim());
-  const searchUrl =
+  const url =
     page <= 1
       ? `${baseUrl}/?s=${encodedQuery}`
       : `${baseUrl}/page/${page}/?s=${encodedQuery}`;
 
-  return fetchPosts(searchUrl, baseUrl, signal, providerContext);
-}
+  return fetchPosts(url, baseUrl, signal, providerContext);
+};

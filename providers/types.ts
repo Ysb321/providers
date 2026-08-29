@@ -49,7 +49,6 @@ export interface Info {
   imdbId: string;
   tmdbId?: string;
   type: string;
-  quickDownload?: boolean;
   tags?: string[];
   cast?: string[];
   rating?: string;
@@ -62,7 +61,6 @@ export interface EpisodeLink {
   link: string;
   description?: string;
   image?: string;
-  quickDownload?: boolean;
   skip?: SkipInterval[];
 }
 
@@ -70,14 +68,12 @@ export interface Link {
   title: string;
   quality?: string;
   episodesLink?: string;
-  quickDownload?: boolean;
   directLinks?: {
     title: string;
     link: string;
     type?: "movie" | "series";
     description?: string;
     image?: string;
-    quickDownload?: boolean;
     skip?: SkipInterval[];
   }[];
 }

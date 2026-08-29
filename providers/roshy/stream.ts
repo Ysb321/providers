@@ -1,7 +1,6 @@
 import { Stream, ProviderContext } from "../types";
-import { throwProviderError } from "../providerErrors";
 
-export async function getStream({
+export const getStream = async function ({
   link,
   type,
   signal,
@@ -14,9 +13,9 @@ export async function getStream({
   providerContext: ProviderContext;
   isDownload?: boolean;
 }): Promise<Stream[]> {
-  try {
-    const { axios, cheerio, commonHeaders } = providerContext;
+  const { axios, cheerio, commonHeaders } = providerContext;
 
+  try {
     // Direct link already points at a media file/iframe.
     if (/\.(m3u8|mp4|mkv|webm)(\?.*)?$/i.test(link)) {
       return [
@@ -29,7 +28,6 @@ export async function getStream({
       ];
     }
 
-    // Otherwise fetch the page and look for an embed/iframe or inline source.
     const response = await axios.get(link, {
       headers: {
         ...commonHeaders,
@@ -40,27 +38,21 @@ export async function getStream({
     const $ = cheerio.load(response.data || "");
 
     const streams: Stream[] = [];
-    const serverKeys: string[] = [];
+    const seen = new Set<string>();
 
-    // iframe embeds (e.g. streaming player)
+    // iframe / video embeds.
     $("iframe[src], embed[src], video source[src]").each((_, el) => {
-      const src =
-        $(el).attr("src") ||
-        $(el).find("source").attr("src") ||
-        "";
-      if (!src) return;
-      const serverName = isDownload
-        ? "Download"
-        : `Server ${serverKeys.length + 1}`;
+      const src = $(el).attr("src") || $(el).find("source").attr("src") || "";
+      if (!src || seen.has(src)) return;
+      seen.add(src);
       streams.push({
-        server: serverName,
+        server: isDownload ? "Download" : `Server ${streams.length + 1}`,
         link: src,
         type: src.includes(".m3u8") ? "m3u8" : "iframe",
       });
-      serverKeys.push(src);
     });
 
-    // Fallback: search raw HTML for a video/blob URL.
+    // Fallback: search the raw HTML for a video/blob URL.
     if (streams.length === 0) {
       const html = String(response.data || "");
       const m3u8Match = html.match(/https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/i);
@@ -74,8 +66,9 @@ export async function getStream({
     }
 
     return streams;
-  } catch (err) {
-    throwProviderError("Roshy", "stream", err);
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error(`Roshy stream error: ${error?.message || error}`);
     return [];
   }
-}
+};

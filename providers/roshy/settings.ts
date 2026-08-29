@@ -7,6 +7,15 @@ export const getSettingsSchema = async function ({
 }): Promise<SettingsField[]> {
   return [
     {
+      key: "baseUrlOverride",
+      type: "text",
+      label: "Custom Domain / Mirror URL",
+      description:
+        "Base URL of the movies/TV site this provider scrapes (e.g. https://example.com)",
+      placeholder: "https://example.com",
+      defaultValue: "",
+    },
+    {
       key: "roshy_quickDownload",
       type: "toggle",
       label: "Quick Download",
@@ -15,15 +24,17 @@ export const getSettingsSchema = async function ({
       defaultValue: true,
     },
     {
-      key: "roshy_preferredDownloadServer",
-      type: "select",
-      label: "Preferred Download Server",
-      description: "Server to prioritize for 1-click quick download",
+      key: "roshy_allowedResolutions",
+      type: "multiselect",
+      label: "Allowed Video Resolutions",
+      description: "Choose video resolutions to include in streams list",
       options: [
-        { label: "Auto (Best Available)", value: "auto" },
-        { label: "Download", value: "download" },
+        { label: "4K (2160p)", value: "2160" },
+        { label: "1080p Full HD", value: "1080" },
+        { label: "720p HD", value: "720" },
+        { label: "480p SD", value: "480" },
       ],
-      defaultValue: "auto",
+      defaultValue: ["2160", "1080", "720"],
     },
   ];
 };

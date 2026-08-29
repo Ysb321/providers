@@ -1,32 +1,46 @@
 import { Info, Link, ProviderContext } from "../types";
-import { getBaseUrl } from "../getBaseUrl";
-import { throwProviderError } from "../providerErrors";
 
-const providerValue = "roshy";
-// Leave empty so the template does not accidentally scrape the adult domain.
-// Set this (or the url in urls.json) to your intended non-adult site before use.
+// The intended non-adult movie/TV site's base URL. Keep blank until configured.
 const defaultBaseUrl = "";
 
-function cleanTitle(raw: string, baseUrl: string): string {
+function cleanTitle(raw: string): string {
   return raw
     .replace(/Download\s*|Watch Online\s*/gi, "")
-    .replace(/\s*[–|-]\s*(Roshy.*)?$/i, "")
+    .replace(/\s*[–|-]\s*.*$/g, "")
     .replace(/\s*\[.*?\]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-export async function getMeta({
+function toAbsolute(link: string, baseUrl: string): string {
+  try {
+    return new URL(link, baseUrl).href;
+  } catch {
+    return link;
+  }
+}
+
+export const getMeta = async function ({
   link,
   providerContext,
 }: {
   link: string;
   providerContext: ProviderContext;
 }): Promise<Info> {
+  const { axios, cheerio, commonHeaders, kvStore } = providerContext;
+  const baseUrl =
+    (await kvStore?.get<string>("baseUrlOverride")) || defaultBaseUrl;
+
+  let title = "";
+  let image = "";
+  let synopsis = "";
+  let imdbId = "";
+  let isSeries = false;
+  let url = "";
+  const linkList: Link[] = [];
+
   try {
-    const { axios, cheerio, commonHeaders } = providerContext;
-    const baseUrl = (await getBaseUrl(providerValue)) || defaultBaseUrl;
-    const url = new URL(link, baseUrl).href;
+    url = new URL(link, baseUrl || "https://example.com").href;
 
     const response = await axios.get(url, {
       headers: {
@@ -44,16 +58,15 @@ export async function getMeta({
         .trim() ||
       $("title").text().split("|")[0].trim();
 
-    const title = cleanTitle(rawTitle, baseUrl);
+    title = cleanTitle(rawTitle);
 
-    const image =
-      $(".poster img, .single-poster img, .poster, .post-thumbnail img, .entry-content img")
+    image =
+      $(".poster img, .single-poster img, .poster, .post-thumbnail img")
         .first()
         .attr("src") ||
       $('meta[property="og:image"]').attr("content") ||
       "";
 
-    let synopsis = "";
     $(".entry-content p, .description, .synopsis p, .content p").each(
       (_, el) => {
         const text = $(el).text().trim();
@@ -69,23 +82,18 @@ export async function getMeta({
       },
     );
 
-    // IMDb ID if the page links out to IMDb.
-    let imdbId = "";
     const imdbLink =
       $('a[href*="imdb.com/title/"]').first().attr("href") || "";
     const imdbMatch = imdbLink.match(/tt\d+/i) || response.data.match(/tt\d+/i);
     if (imdbMatch) imdbId = imdbMatch[0];
 
-    const isSeries =
+    isSeries =
       /\b(season\s*\d+|s\d+|complete\s+series|all\s+episodes|episode\s*\d+)\b/i.test(
         rawTitle,
       ) ||
       /-full-series-download|-season-\d+/i.test(url) ||
       /\/tv\//.test(url);
 
-    const linkList: Link[] = [];
-
-    // Episodes grouped by season / quality, common on these themes.
     if (isSeries) {
       const seasonMap: Record<
         string,
@@ -133,20 +141,19 @@ export async function getMeta({
       }
     }
 
-    // Fallback: movie download links container.
     if (linkList.length === 0) {
       const dlLinks: { title: string; link: string; type?: "movie" }[] = [];
-      $(".download-links a, .download-btn, a[href*='generate.php'], a.download").each(
-        (_, aEl) => {
-          const href = $(aEl).attr("href");
-          if (!href) return;
-          dlLinks.push({
-            title: "Movie",
-            link: toAbsolute(href, baseUrl),
-            type: "movie",
-          });
-        },
-      );
+      $(
+        ".download-links a, .download-btn, a[href*='generate.php'], a.download",
+      ).each((_, aEl) => {
+        const href = $(aEl).attr("href");
+        if (!href) return;
+        dlLinks.push({
+          title: "Movie",
+          link: toAbsolute(href, baseUrl),
+          type: "movie",
+        });
+      });
       if (dlLinks.length > 0) {
         linkList.push({
           title: "Download",
@@ -164,15 +171,16 @@ export async function getMeta({
       linkList,
       webUrl: url,
     };
-  } catch (err) {
-    throwProviderError("Roshy", "metadata", err);
+  } catch (error: any) {
+    // eslint-disable-next-line no-console
+    console.error(`Roshy meta error: ${error?.message || error}`);
+    return {
+      title,
+      synopsis: "",
+      image: "",
+      imdbId: "",
+      type: "movie",
+      linkList: [],
+    };
   }
-}
-
-function toAbsolute(link: string, baseUrl: string): string {
-  try {
-    return new URL(link, baseUrl).href;
-  } catch {
-    return link;
-  }
-}
+};

@@ -14,6 +14,9 @@
     "dev": "node dev-server.js",
     "dev:build": "npm run build && npm run dev",
     "watch": "nodemon --config nodemon.json",
+    "watch:dev": "nodemon --watch providers --ext ts --exec \"npm run build\" & npm run dev",
+    "dev:auto": "concurrently \"nodemon --watch providers --ext ts --exec \\\"npm run build:dev\\\"\" \"npm run dev\"",
+    "auto": "node auto-dev.js",
     "start": "npm run build && npm run dev"
   },
   "devDependencies": {
@@ -31,9 +34,7 @@
   "dependencies": {
     "axios": "^1.10.0",
     "cheerio": "^1.1.0",
-    "curl-cffi-node": "^0.1.8",
     "rimraf": "^6.0.1",
-    "tls-impersonate": "^0.1.0",
     "zod": "^4.0.2"
   }
 }
