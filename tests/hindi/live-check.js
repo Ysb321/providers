@@ -35,6 +35,11 @@ const TITLES = {
     "Bandar",
     "Mousetrap",
     "Anbe Diana",
+    // Back-catalogue titles that are nowhere near the front page: these are
+    // the ones that silently returned homepage entries while search was
+    // going through the ignored `?s=` parameter.
+    "Deadpool",
+    "Deadpool & Wolverine",
   ],
 };
 

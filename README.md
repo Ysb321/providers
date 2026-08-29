@@ -602,6 +602,46 @@ Note the redirector cannot be detected from the original URL: it is
 `/file/<id>`, and the `?r=<base64>` form only appears *after* following the
 302.
 
+### HDHub4u: `?s=` is ignored, search lives at `/search/<query>/`
+
+HDHub4u runs on WordPress but **does not support the `?s=` search query**.
+`GET /?s=deadpool` returns HTTP 200 *at that same URL* — no redirect, nothing a
+status check can catch — and the body is the homepage, "Latest Releases". The
+parameter is discarded, so every search quietly returned the newest uploads
+instead of the query, and any title not currently on the front page (Deadpool,
+and the whole back catalogue) looked as if the site did not carry it.
+
+The search box posts to `/search.html?q=`, but that page is a JavaScript shell
+that renders "Loading results…" and never populates without a browser, so it is
+equally useless to a provider.
+
+The server-rendered route is:
+
+```
+/search/<query>/            # page 1
+/search/<query>/page/N/     # page N
+```
+
+Verified live: `/search/deadpool/` returns all three Deadpool titles and
+`/search/mission/page/2/` returns page 2. Spaces and colons are fine when
+percent-encoded (`/search/mission%3A%20impossible/` resolves).
+
+Two behaviours to know about:
+
+- **Matching is a contiguous substring of the title**, not a ranked word
+  search. `/search/deadpool wolverine/` finds *nothing*, because the post is
+  titled "Deadpool **&** Wolverine". Since the app passes whole titles through
+  from its own metadata, and punctuation rarely matches, `getSearchPosts` drops
+  trailing words one at a time (max four attempts) and returns the first
+  candidate that hits.
+- **An empty result is still HTTP 200**, with a 404 graphic in the body. It is
+  indistinguishable from a hit by status alone, so results are judged by
+  parsing the page.
+
+`getSearchPosts` also refuses to parse a response that looks like the homepage
+listing rather than a search page. Returning "Latest Releases" under the user's
+search term is worse than an honest empty result, so that case raises instead.
+
 ### HDHub4u: the site cookie must not reach the file hosts
 
 `Cookie: xla=s4t` unlocks the download block **on hdhub4u only**. It must not

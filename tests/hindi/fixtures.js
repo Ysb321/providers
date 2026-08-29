@@ -141,6 +141,7 @@ const HH_LIST_HTML = `<!doctype html><html><body>
   <a href="https://new5.hdhub4u.cl/category/action-movies/">Action</a>
   <a href="https://new5.hdhub4u.cl/disclaimer/">Disclaimer</a>
 </nav>
+<h2>__ Latest Releases</h2>
 <ul>
   <li>
     <img src="https://image.tmdb.org/t/p/w342/oFEnDAN1tFEvPqpOKhNTAPw2NeH.jpg" alt="The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio | Full Movie">
@@ -209,6 +210,86 @@ const HH_MOVIE_HTML = `<!doctype html><html><body>
 <h4><a href="https://4khdhub.one/the-whisper-man-movie-7885/">4K | SDR | HDR | DV | HEVC</a></h4>
 </body></html>`;
 
+/**
+ * A real `/search/<query>/` result page (reconstructed from the rendered live
+ * page for "deadpool", which returns exactly these three titles).
+ *
+ * Two details matter and are preserved verbatim:
+ *   - the "Search Results for" title, which distinguishes a real search
+ *     response from the homepage the broken `?s=` route used to return;
+ *   - the same three-sibling entry shape as the listing (img, empty anchor,
+ *     text anchor) - the poster is not nested inside either anchor.
+ */
+const HH_SEARCH_HTML = `<!doctype html><html><head>
+<title>Search Results for &ldquo;deadpool&rdquo; &ndash; HDHub4u Official</title></head><body>
+<nav>
+  <a href="https://new5.hdhub4u.cl/">HDHub4u Home</a>
+  <a href="https://new5.hdhub4u.cl/category/bollywood-movies/">BollyWood</a>
+  <a href="https://new5.hdhub4u.cl/category/hollywood-movies/">HollyWood</a>
+  <a href="https://new5.hdhub4u.cl/category/hindi-dubbed/">Hindi Dubbed</a>
+  <a href="https://new5.hdhub4u.cl/category/south-hindi-movies/">South Hindi</a>
+  <a href="https://new5.hdhub4u.cl/category/web-series/">Web Series</a>
+  <a href="https://new5.hdhub4u.cl/category/action-movies/">Action</a>
+  <a href="https://new5.hdhub4u.cl/category/adventure/">Adventure</a>
+  <a href="https://new5.hdhub4u.cl/category/comedy-movies/">Comedy</a>
+  <a href="https://new5.hdhub4u.cl/category/crime/">Crime</a>
+  <a href="https://new5.hdhub4u.cl/category/drama/">Drama</a>
+  <a href="https://new5.hdhub4u.cl/category/horror-movies/">Horror</a>
+  <a href="https://new5.hdhub4u.cl/category/mystery/">Mystery</a>
+  <a href="https://new5.hdhub4u.cl/category/thriller/">Thriller</a>
+</nav>
+<h2>__ Search - deadpool</h2>
+<ul>
+  <li>
+    <img src="https://image.tmdb.org/t/p/w342/xl6sgxa4entJS0aOWX0bPAlEn8.jpg" alt="Deadpool &amp; Wolverine (2024)">
+    <a href="https://new5.hdhub4u.cl/deadpool-wolverine-2024-hindi-bluray-full-movie/"></a>
+    <a href="https://new5.hdhub4u.cl/deadpool-wolverine-2024-hindi-bluray-full-movie/">Deadpool &amp; Wolverine (2024) BluRay [Hindi (ORG 5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio [x264/10Bit-HEVC] | Full Movie</a>
+  </li>
+  <li>
+    <img src="https://image.tmdb.org/t/p/w342/mWgG7jemjarHz71myBcnaDcT1z7.jpg" alt="Deadpool 2 (2018)">
+    <a href="https://new5.hdhub4u.cl/deadpool-2-2018-hindi-super-duper-cut-bluray-full-movie/"></a>
+    <a href="https://new5.hdhub4u.cl/deadpool-2-2018-hindi-super-duper-cut-bluray-full-movie/">Deadpool 2 (2018) Super Duper Cut BluRay [Hindi (ORG 5.1) + English] 4K 1080p 720p &amp; 480p Dual Audio [x264/10Bit-HEVC] | Full Movie</a>
+  </li>
+  <li>
+    <img src="https://image.tmdb.org/t/p/w342/3E53WEZJqP6aM84D8CckXx4pIHw.jpg" alt="Deadpool (2016)">
+    <a href="https://new5.hdhub4u.cl/deadpool-2016-hindi-bluray-full-movie/"></a>
+    <a href="https://new5.hdhub4u.cl/deadpool-2016-hindi-bluray-full-movie/">Deadpool (2016) BluRay [Hindi (ORG 5.1) + English] 4K 1080p 720p &amp; 480p Dual Audio [x264/10Bit-HEVC] | Full Movie</a>
+  </li>
+</ul>
+</body></html>`;
+
+/**
+ * `/search/<query>/` when the query matches nothing. The site answers 200 with
+ * the heading and a 404 graphic rather than an error status - which is also
+ * what an over-specific multi-word query gets, because the match is a
+ * contiguous substring ("deadpool wolverine" misses "Deadpool & Wolverine").
+ */
+const HH_SEARCH_EMPTY_HTML = `<!doctype html><html><head>
+<title>Search Results for &ldquo;nothing&rdquo; &ndash; HDHub4u Official</title></head><body>
+<nav>
+  <a href="https://new5.hdhub4u.cl/">HDHub4u Home</a>
+  <a href="https://new5.hdhub4u.cl/category/bollywood-movies/">BollyWood</a>
+  <a href="https://new5.hdhub4u.cl/category/hollywood-movies/">HollyWood</a>
+  <a href="https://new5.hdhub4u.cl/category/hindi-dubbed/">Hindi Dubbed</a>
+  <a href="https://new5.hdhub4u.cl/category/south-hindi-movies/">South Hindi</a>
+  <a href="https://new5.hdhub4u.cl/category/web-series/">Web Series</a>
+  <a href="https://new5.hdhub4u.cl/category/action-movies/">Action</a>
+  <a href="https://new5.hdhub4u.cl/category/adventure/">Adventure</a>
+  <a href="https://new5.hdhub4u.cl/category/comedy-movies/">Comedy</a>
+  <a href="https://new5.hdhub4u.cl/category/crime/">Crime</a>
+  <a href="https://new5.hdhub4u.cl/category/drama/">Drama</a>
+  <a href="https://new5.hdhub4u.cl/category/horror-movies/">Horror</a>
+  <a href="https://new5.hdhub4u.cl/category/mystery/">Mystery</a>
+  <a href="https://new5.hdhub4u.cl/category/thriller/">Thriller</a>
+</nav>
+<h2>__ Search - nothing</h2>
+<img src="https://new5.hdhub4u.cl/wp-content/themes/9xhd/assets/404.png" alt="404 Not found">
+<footer>2026 &copy; <a href="https://hdhub4u.download/">HDHub4u.Tv</a> | All Rights Reserved.
+  <a href="https://new5.hdhub4u.cl/disclaimer/">Disclaimer</a>
+  <a href="https://new5.hdhub4u.cl/how-to-download/">How To Download ?</a>
+</footer>
+</body></html>`;
+
 /** Series page: per-episode headings, each with 720p/1080p Drive + Instant. */
 const HH_SERIES_HTML = `<!doctype html><html><body>
 <h1>Mousetrap (Season 1) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p [x264/10Bit-HEVC] | [ALL Episodes] | NF Series</h1>
@@ -272,6 +353,8 @@ module.exports = {
   MD_ARCHIVE_MOVIE_HTML,
   MD_ARCHIVE_SERIES_HTML,
   HH_LIST_HTML,
+  HH_SEARCH_HTML,
+  HH_SEARCH_EMPTY_HTML,
   HH_LANDING_HTML,
   HH_MOVIE_HTML,
   HH_SERIES_HTML,

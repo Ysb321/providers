@@ -126,6 +126,66 @@ export const getPosts = async function ({
   }
 };
 
+/**
+ * Builds a search URL.
+ *
+ * HDHub4u does **not** support WordPress' `?s=` query, even though it runs on
+ * WordPress. `GET /?s=deadpool` answers HTTP 200 *at that exact URL* - no
+ * redirect, nothing to notice in a status check - but the body is the
+ * homepage, "Latest Releases". The parameter is simply ignored, so searching
+ * always returned the newest uploads regardless of the query, and a title that
+ * was not on the front page (Deadpool) looked absent from the whole site.
+ *
+ * The box on the site posts to `/search.html?q=`, which is only a JavaScript
+ * shell ("Loading results...") and stays empty without a browser, so it is no
+ * use to us either.
+ *
+ * The server-rendered route is `/search/<query>/`, with `/page/N/` appended
+ * for later pages. Verified live: `/search/deadpool/` returns the three
+ * Deadpool titles, `/search/mission/page/2/` returns page 2.
+ */
+function searchPath(query: string, page: number): string {
+  const suffix = page && page > 1 ? `page/${page}/` : "";
+  return `/search/${encodeURIComponent(query)}/${suffix}`;
+}
+
+/**
+ * Query fallbacks, longest first.
+ *
+ * `/search/` matches the query as one **contiguous** run of characters inside
+ * the post title, so every extra word narrows it to nothing rather than
+ * ranking loosely: `/search/deadpool wolverine/` finds no posts because the
+ * title reads "Deadpool **&** Wolverine", while `/search/deadpool/` finds all
+ * three. Punctuation the user did not type is the usual culprit ("&", ":",
+ * "-"), and the app passes whole titles through from its own metadata.
+ *
+ * So drop trailing words one at a time and take the first candidate that hits.
+ * Capped at four attempts to stay polite - each one is a round trip.
+ */
+function queryCandidates(query: string): string[] {
+  const words = query.split(/\s+/).filter(Boolean);
+  const candidates = [query];
+  for (let count = words.length - 1; count >= 1; count--) {
+    if (candidates.length >= 4) break;
+    const candidate = words.slice(0, count).join(" ");
+    if (candidate && !candidates.includes(candidate)) candidates.push(candidate);
+  }
+  return candidates;
+}
+
+/**
+ * True when the response is the homepage listing rather than a search page.
+ *
+ * This is the exact shape of the `?s=` bug: real HTML, HTTP 200, plenty of
+ * posts - just not the ones that were asked for. Parsing it would hand the
+ * user "Latest Releases" under their search term, which is worse than an
+ * honest failure, so it is detected instead of trusted.
+ */
+function isListingNotSearch(html: string): boolean {
+  if (/Search Results for/i.test(html)) return false;
+  return /Latest\s+Releases/i.test(html);
+}
+
 export const getSearchPosts = async function ({
   searchQuery,
   page,
@@ -143,14 +203,27 @@ export const getSearchPosts = async function ({
     const query = (searchQuery || "").trim();
     if (!query) return [];
 
-    // WordPress search; paging uses the /page/N/ prefix before the query.
-    const path =
-      page && page > 1
-        ? `/page/${page}/?s=${encodeURIComponent(query)}`
-        : `/?s=${encodeURIComponent(query)}`;
+    for (const candidate of queryCandidates(query)) {
+      const { html, baseUrl } = await fetchPage({
+        path: searchPath(candidate, page),
+        providerContext,
+        signal,
+      });
 
-    const { html, baseUrl } = await fetchPage({ path, providerContext, signal });
-    return collect(html, baseUrl, providerContext);
+      // Never parse the homepage as if it were a result set.
+      if (isListingNotSearch(html)) {
+        throw new Error(
+          "search route returned the homepage listing - /search/<query>/ " +
+            "appears to have moved",
+        );
+      }
+
+      const posts = collect(html, baseUrl, providerContext);
+      if (posts.length) return posts;
+    }
+
+    // Genuinely nothing on the site for this title.
+    return [];
   } catch (err) {
     throwProviderError(PROVIDER_NAME, "getSearchPosts", err);
   }

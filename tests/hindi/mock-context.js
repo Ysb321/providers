@@ -99,6 +99,26 @@ function createContext(opts = {}) {
       if (/hdhub4u\.(bi|ec|ms|tv|download)/i.test(url)) {
         return ok(F.HH_LANDING_HTML);
       }
+      // The server-rendered search route. Matching is a *contiguous substring*
+      // of the title, exactly as live: "/search/deadpool/" hits, but
+      // "/search/deadpool wolverine/" misses because the real title reads
+      // "Deadpool & Wolverine". Reproducing that here is what makes the
+      // word-dropping fallback a real test instead of a self-fulfilling one.
+      const searchMatch = /\/search\/([^/?]+)/i.exec(url);
+      if (searchMatch) {
+        const query = decodeURIComponent(searchMatch[1]).toLowerCase();
+        const titles = [
+          "deadpool & wolverine (2024) bluray",
+          "deadpool 2 (2018) super duper cut bluray",
+          "deadpool (2016) bluray",
+        ];
+        const hit = titles.some((t) => t.includes(query));
+        return ok(hit ? F.HH_SEARCH_HTML : F.HH_SEARCH_EMPTY_HTML);
+      }
+
+      // The WordPress `?s=` query is IGNORED by this site: it answers 200 at
+      // the same URL with the homepage. Serving the listing here is what makes
+      // the old build fail the search test.
       if (/mousetrap|season/i.test(url)) return ok(F.HH_SERIES_HTML);
       if (/the-whisper-man|alpha-2026|the-last-sunrise/i.test(url)) return ok(F.HH_MOVIE_HTML);
       return ok(F.HH_LIST_HTML);

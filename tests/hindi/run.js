@@ -504,30 +504,76 @@ const restoreFetch = installFetchStub();
   await section("hdhub4u: search", async () => {
     const { context, calls } = createContext();
     const results = await hh.posts.getSearchPosts({
-      searchQuery: "whisper man",
+      searchQuery: "deadpool",
       page: 1,
       providerValue: "hdhub4u",
       signal,
       providerContext: context,
     });
-    check("returns results", results.length > 0, `${results.length}`);
+    check("returns results", results.length === 3, `${results.length}`);
     check(
-      "uses the WordPress ?s= search",
-      calls.some((c) => /\?s=whisper%20man/.test(c.url)),
+      "finds Deadpool & Wolverine",
+      results.some((r) => /Deadpool & Wolverine/i.test(r.title)),
+      results.map((r) => r.title).join(" | "),
+    );
+    // The bug this replaced: `?s=` is ignored by the site, so search silently
+    // returned the homepage's "Latest Releases" for every query.
+    check(
+      "uses /search/<query>/, not the ignored ?s= parameter",
+      calls.some((c) => /\/search\/deadpool\//.test(c.url)) &&
+        !calls.some((c) => /\?s=/.test(c.url)),
       calls.map((c) => c.url).join(" "),
     );
+    check(
+      "no homepage entries leaked into the results",
+      !results.some((r) => /Whisper Man|Mousetrap|Alpha/i.test(r.title)),
+      results.map((r) => r.title).join(" | "),
+    );
+
+    // Titles arrive from app metadata with punctuation the site spells
+    // differently ("Deadpool & Wolverine"), and the match is a contiguous
+    // substring, so the extra word must be dropped to find anything.
+    const { context: c3, calls: narrowed } = createContext();
+    const fallback = await hh.posts.getSearchPosts({
+      searchQuery: "deadpool wolverine",
+      page: 1,
+      providerValue: "hdhub4u",
+      signal,
+      providerContext: c3,
+    });
+    check(
+      "falls back to a shorter query when the full one misses",
+      fallback.length === 3,
+      `${fallback.length}`,
+    );
+    check(
+      "tried the full query first, then the shorter one",
+      /\/search\/deadpool%20wolverine\//.test(narrowed[0].url) &&
+        narrowed.some((c) => /\/search\/deadpool\//.test(c.url)),
+      narrowed.map((c) => c.url).join(" "),
+    );
+
+    const { context: c4 } = createContext();
+    const missing = await hh.posts.getSearchPosts({
+      searchQuery: "zzzzqqqxnotathing",
+      page: 1,
+      providerValue: "hdhub4u",
+      signal,
+      providerContext: c4,
+    });
+    check("genuinely absent title returns []", missing.length === 0, `${missing.length}`);
 
     const { context: c2, calls: paged } = createContext();
     await hh.posts.getSearchPosts({
-      searchQuery: "alpha",
+      searchQuery: "deadpool",
       page: 3,
       providerValue: "hdhub4u",
       signal,
       providerContext: c2,
     });
     check(
-      "paging uses /page/N/ before the query",
-      paged.some((c) => /\/page\/3\/\?s=alpha/.test(c.url)),
+      "paging appends /page/N/ after the query",
+      paged.some((c) => /\/search\/deadpool\/page\/3\//.test(c.url)),
       paged.map((c) => c.url).join(" "),
     );
   });
