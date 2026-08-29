@@ -10,12 +10,22 @@ export const PROVIDER_NAME = "hdhub4u";
  */
 export const DEFAULT_BASE_URL = "https://new5.hdhub4u.cl";
 
+/**
+ * Content mirrors, in preference order.
+ *
+ * IMPORTANT: only the `newN.hdhub4u.<tld>` hosts serve the actual catalogue.
+ * The heavily-advertised "official" domains (hdhub4u.bi / .ec / .ms / .tv /
+ * .download) are static SEO landing pages - they answer HTTP 200 with a wall
+ * of marketing copy and **zero posts**. Listing them as fallbacks is worse
+ * than having no fallback at all: the failover would treat one as a success,
+ * cache it, and the provider would then return an empty catalogue forever.
+ * They are deliberately excluded; `looksLikeCatalogue` below is the backstop.
+ */
 export const MIRRORS = [
   "https://new5.hdhub4u.cl",
   "https://new4.hdhub4u.cl",
-  "https://hdhub4u.bi",
-  "https://hdhub4u.ec",
-  "https://hdhub4u.ms",
+  "https://new3.hdhub4u.cl",
+  "https://new2.hdhub4u.cl",
 ];
 
 const DESKTOP_UA =
@@ -60,6 +70,19 @@ export async function getBaseUrl(
   if (cached && cached.trim()) return normalise(cached);
 
   return DEFAULT_BASE_URL;
+}
+
+/**
+ * True when a response actually looks like the catalogue rather than one of
+ * the SEO landing pages that share the brand.
+ *
+ * Those pages return HTTP 200 with real HTML, so a status check alone happily
+ * accepts them - and then every listing comes back empty. A genuine page
+ * always links to at least one `/category/<slug>/` route.
+ */
+function looksLikeCatalogue(html: string): boolean {
+  if (!html || html.length < 500) return false;
+  return /href=["'][^"']*\/category\/[^"']+["']/i.test(html);
 }
 
 /**
@@ -109,6 +132,14 @@ export async function fetchPage({
       const html = typeof res.data === "string" ? res.data : "";
       if (res.status >= 400 || !html) {
         lastError = new Error(`HTTP ${res.status} from ${base}${path || "/"}`);
+        continue;
+      }
+      // A landing page answers 200 with no catalogue on it. Treat that as a
+      // miss so failover keeps looking instead of caching a dead-end host.
+      if (!looksLikeCatalogue(html)) {
+        lastError = new Error(
+          `${base} responded but served no catalogue (looks like a landing page)`,
+        );
         continue;
       }
       if (base !== configured) {

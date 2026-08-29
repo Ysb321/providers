@@ -120,30 +120,63 @@ const MD_ARCHIVE_SERIES_HTML = `<!doctype html><html><body>
  * HDHub4u                                                             *
  * ================================================================== */
 
+/**
+ * Listing page. Mirrors the real DOM exactly: each entry has TWO anchors to
+ * the same permalink - an image-only one (empty text) followed by the text
+ * one carrying the title. Getting this wrong is what made getPosts return an
+ * empty array against the live site.
+ */
 const HH_LIST_HTML = `<!doctype html><html><body>
+<nav>
+  <a href="https://new5.hdhub4u.cl/category/bollywood-movies/">BollyWood</a>
+  <a href="https://new5.hdhub4u.cl/category/action-movies/">Action</a>
+  <a href="https://new5.hdhub4u.cl/disclaimer/">Disclaimer</a>
+</nav>
 <ul>
   <li>
-    <img src="https://image.tmdb.org/t/p/w342/oFEnDAN1tFEvPqpOKhNTAPw2NeH.jpg"
-         alt="The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio | Full Movie">
-    <a href="https://new5.hdhub4u.cl/the-whisper-man-2026-hindi-webrip-full-movie/">The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] | Full Movie</a>
+    <a href="https://new5.hdhub4u.cl/the-whisper-man-2026-hindi-webrip-full-movie/"><img src="https://image.tmdb.org/t/p/w342/oFEnDAN1tFEvPqpOKhNTAPw2NeH.jpg" alt="The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio | Full Movie"></a>
+    <a href="https://new5.hdhub4u.cl/the-whisper-man-2026-hindi-webrip-full-movie/">The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio [x264/10Bit-HEVC] | Full Movie</a>
   </li>
   <li>
-    <img src="https://image.tmdb.org/t/p/w342/nuLMioRauQacj4bRXRsJX9Oe5H6.jpg" alt="Alpha (2026)">
-    <a href="https://new5.hdhub4u.cl/alpha-2026-hindi-webrip-full-movie/">Alpha (2026) DS4K WEB-DL [Hindi DD5.1] | Full Movie</a>
+    <a href="https://new5.hdhub4u.cl/alpha-2026-hindi-webrip-full-movie/"><img src="https://image.tmdb.org/t/p/w342/nuLMioRauQacj4bRXRsJX9Oe5H6.jpg" alt="Alpha (2026)"></a>
+    <a href="https://new5.hdhub4u.cl/alpha-2026-hindi-webrip-full-movie/">Alpha (2026) DS4K WEB-DL [Hindi DD5.1] 4K 1080p 720p &amp; 480p | Full Movie</a>
   </li>
   <li>
-    <img src="https://image.tmdb.org/t/p/w342/dXpDkHr8mUAabDVPoEstJ3gzSf6.jpg" alt="Mousetrap (Season 1)">
+    <a href="https://new5.hdhub4u.cl/mousetrap-season-1-hindi-webrip-all-episodes/"><img src="https://image.tmdb.org/t/p/w342/dXpDkHr8mUAabDVPoEstJ3gzSf6.jpg" alt="Mousetrap (Season 1)"></a>
     <a href="https://new5.hdhub4u.cl/mousetrap-season-1-hindi-webrip-all-episodes/">Mousetrap (Season 1) WEB-DL [Hindi (DD5.1) &amp; English] | [ALL Episodes] | NF Series</a>
   </li>
   <li>
-    <img src="https://myimg.click/images/joinwhatsapp-1.png" alt="Join WhatsApp">
-    <a href="https://whatsapp.com/channel/0029VbC1T9JChq6LbeQ6uh39">WhatsApp</a>
+    <a href="https://new5.hdhub4u.cl/wanted-2009-bluray-hindi-full-movie/"><img src="https://imgshare.info/images/2026/08/24/Wanted-2009.jpg" alt="Wanted (2009)"></a>
+    <a href="https://new5.hdhub4u.cl/wanted-2009-bluray-hindi-full-movie/">Wanted (2009) BluRay [Hindi DD5.1] 1080p 720p &amp; 480p [x264] | Full Movie</a>
   </li>
   <li>
-    <img src="https://image.tmdb.org/t/p/w342/xyz.jpg" alt="Action category">
-    <a href="https://new5.hdhub4u.cl/category/action-movies/">Action</a>
+    <a href="https://whatsapp.com/channel/0029VbC1T9JChq6LbeQ6uh39"><img src="https://myimg.click/images/joinwhatsapp-1.png" alt="Join WhatsApp"></a>
   </li>
-</ul></body></html>`;
+</ul>
+<div class="pagination">
+  <a href="https://new5.hdhub4u.cl/page/2/">2</a>
+  <a href="https://new5.hdhub4u.cl/page/172/">172</a>
+</div>
+<footer><a href="https://hdhub4u.download/">HDHub4u.Tv</a></footer>
+</body></html>`;
+
+/**
+ * One of the SEO landing pages that share the brand (hdhub4u.bi/.ec/.ms).
+ * Answers 200 with real HTML but carries no catalogue at all - the reason
+ * they must never be used as content mirrors.
+ */
+const HH_LANDING_HTML = `<!doctype html><html><head><title>HDHub4u</title></head><body>
+<img src="https://hdhub4u.bi/hdhub4ulogo.webp" alt="hdhub4u">
+<h1>HDHub4u : The Best Free Site for Movie Lovers</h1>
+<p>HDHub4u is the ultimate destination for movie lovers in the Indian
+subcontinent, offering a wide range of films in various languages and quality
+options. Whether you are looking to download the latest Bollywood hits,
+regional films, or international blockbusters, here is why HDHub4u stands out
+as a top choice. The platform offers multiple mirror sites for downloading
+movies, including Google Drive, Indishare, and Clicknupload.</p>
+<a href="https://hdhub4u.ms/">HDHub4u</a>
+<p>Thank you! &copy; HDHub4u All rights reserved.</p>
+</body></html>`;
 
 const HH_MOVIE_HTML = `<!doctype html><html><body>
 <h1>The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio [x264/10Bit-HEVC] | Full Movie</h1>
@@ -223,6 +256,7 @@ module.exports = {
   MD_ARCHIVE_MOVIE_HTML,
   MD_ARCHIVE_SERIES_HTML,
   HH_LIST_HTML,
+  HH_LANDING_HTML,
   HH_MOVIE_HTML,
   HH_SERIES_HTML,
   HH_HUBDRIVE_HTML,

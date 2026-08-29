@@ -94,6 +94,11 @@ function createContext(opts = {}) {
 
     /* ---------------- HDHub4u ---------------- */
     if (/hdhub4u/i.test(url)) {
+      // The brand's "official" domains are SEO landing pages: HTTP 200, real
+      // HTML, zero catalogue. Serve that so the landing-page guard is tested.
+      if (/hdhub4u\.(bi|ec|ms|tv|download)/i.test(url)) {
+        return ok(F.HH_LANDING_HTML);
+      }
       if (/mousetrap|season/i.test(url)) return ok(F.HH_SERIES_HTML);
       if (/the-whisper-man|alpha-2026/i.test(url)) return ok(F.HH_MOVIE_HTML);
       return ok(F.HH_LIST_HTML);

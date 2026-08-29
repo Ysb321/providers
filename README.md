@@ -565,6 +565,20 @@ never recovers. Each provider ships a mirror list and fails over automatically,
 caching whichever mirror answered in `kvStore`. Users can pin a domain in
 settings.
 
+**HDHub4u mirrors need care.** Only the `newN.hdhub4u.<tld>` hosts serve the
+catalogue. The heavily-advertised "official" domains the site banners at the
+top of every page — `hdhub4u.bi`, `.ec`, `.ms`, `.tv`, `.download` — are static
+SEO landing pages: they answer **HTTP 200 with real HTML and zero posts**.
+
+Listing them as fallbacks is worse than having no fallback, because a plain
+status check accepts one, caches it as "the working mirror", and every listing
+is empty from then on. That is exactly the *"hdhub4u returns no posts"* failure.
+`fetchPage` now requires a page to link at least one `/category/<slug>/` route
+before accepting it, so a landing page is treated as a miss and failover keeps
+looking. If nothing real is reachable the provider raises an error rather than
+returning an empty list, so the app can say *"unavailable"* instead of quietly
+showing nothing.
+
 ### Structural quirks handled
 
 - **Post links are stored site-relative** (`/the-whisper-man-2026.../`) so a

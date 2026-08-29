@@ -10,6 +10,24 @@ import {
 const IGNORE_HREF =
   /\/(category|tag|page|author|about|contact|dmca|privacy|how-to-download|feed)\b|whatsapp\.com|t\.me\/|\.apk$|#/i;
 
+/**
+ * Collects posts from a listing page.
+ *
+ * The markup for one entry is a list item holding **two** anchors to the same
+ * permalink: an image-only one (whose own text is empty) and a text one
+ * carrying the title:
+ *
+ *   <li>
+ *     <a href="/slug/"><img src="poster.jpg" alt="Title ..."></a>
+ *     <a href="/slug/">Title (2026) WEB-DL [Hindi] ...</a>
+ *   </li>
+ *
+ * So the permalink is the reliable key: group every anchor by its target and
+ * merge the poster and the title from whichever sibling supplied each. Keying
+ * off the image and hoping the *first* anchor in the container carried the
+ * title is what previously returned nothing on pages where the image-only
+ * anchor comes first.
+ */
 function collect(
   html: string,
   baseUrl: string,
@@ -17,39 +35,58 @@ function collect(
 ): Post[] {
   const { cheerio } = providerContext;
   const $ = cheerio.load(html || "");
-  const posts: Post[] = [];
-  const seen = new Set<string>();
 
-  // Listing items pair a poster <img> with the post permalink. The anchor and
-  // the image are siblings inside an <li>, so search from the image outwards.
-  $("img").each((_, el) => {
-    const img = $(el);
-    const image =
-      img.attr("src") || img.attr("data-src") || img.attr("data-lazy-src") || "";
-    if (!image || /whatsapp|banner|logo|\.svg$/i.test(image)) return;
+  const byLink = new Map<string, { title: string; image: string }>();
+  const order: string[] = [];
 
-    const container = img.closest("li, article, div");
-    const anchor = container.find('a[href]').filter((_i, a) => {
-      const href = $(a).attr("href") || "";
-      return Boolean(href) && !IGNORE_HREF.test(href);
-    }).first();
-
+  $("a[href]").each((_, el) => {
+    const anchor = $(el);
     const href = anchor.attr("href") || "";
-    if (!href) return;
+    if (!href || IGNORE_HREF.test(href)) return;
 
     const relative = toRelativePath(href, baseUrl);
-    // Post permalinks are one slug deep off the site root.
+    // Post permalinks are exactly one slug deep off the site root.
     if (!/^\/[^/]+\/?$/.test(relative)) return;
-    if (seen.has(relative)) return;
 
+    const img = anchor.find("img").first();
+    const image =
+      img.attr("src") || img.attr("data-src") || img.attr("data-lazy-src") || "";
+
+    // The anchor's own text, or the image alt when this is the image-only one.
     const title = cleanTitle(
-      anchor.text() || img.attr("alt") || anchor.attr("title") || "",
+      anchor.text().replace(/\s+/g, " ").trim() ||
+        img.attr("alt") ||
+        anchor.attr("title") ||
+        "",
     );
-    if (!title) return;
 
-    seen.add(relative);
-    posts.push({ title, link: relative, image });
+    if (!byLink.has(relative)) {
+      byLink.set(relative, { title: "", image: "" });
+      order.push(relative);
+    }
+    const entry = byLink.get(relative)!;
+
+    // Prefer a real poster; ignore site chrome (banners, logos, share icons).
+    if (
+      !entry.image &&
+      image &&
+      !/whatsapp|telegram|banner|logo|sharethis|\.svg(\?|$)/i.test(image)
+    ) {
+      entry.image = image;
+    }
+    // Prefer the longest title seen - the text anchor is more descriptive
+    // than a truncated alt attribute.
+    if (title && title.length > entry.title.length) entry.title = title;
   });
+
+  const posts: Post[] = [];
+  for (const relative of order) {
+    const entry = byLink.get(relative)!;
+    // A real listing entry always has a poster; nav links never do. This is
+    // what keeps footer/menu links out without needing a slug blocklist.
+    if (!entry.title || !entry.image) continue;
+    posts.push({ title: entry.title, link: relative, image: entry.image });
+  }
 
   return posts;
 }

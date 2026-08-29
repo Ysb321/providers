@@ -382,6 +382,66 @@ const restoreFetch = installFetchStub();
       !posts.some((p) => /\/category\//.test(p.link)),
     );
     check("links stored relative", posts.every((p) => p.link.startsWith("/")));
+
+    // Regression: the real markup puts the poster and the title in TWO
+    // separate sibling anchors pointing at the same permalink. Keying off the
+    // image and taking the container's first anchor returned an empty list.
+    check(
+      "merges the image-only and text anchors into one post",
+      posts.length === 4,
+      `${posts.length} (expected 4 - one per entry, not per anchor)`,
+    );
+    check(
+      "no duplicate entries from the paired anchors",
+      new Set(posts.map((p) => p.link)).size === posts.length,
+    );
+    check(
+      "takes the descriptive title, not the shorter alt text",
+      posts.some((p) => /Dual Audio|10Bit-HEVC/i.test(p.title)),
+      posts.map((p) => p.title.slice(0, 40)).join(" | "),
+    );
+    check(
+      "every post has a poster",
+      posts.every((p) => /^https?:\/\//.test(p.image)),
+    );
+    check(
+      "pagination links are not posts",
+      !posts.some((p) => /^\/page\//.test(p.link)),
+    );
+    check(
+      "older catalogue entries are picked up too",
+      posts.some((p) => /Wanted/i.test(p.title)),
+    );
+  });
+
+  await section("hdhub4u: landing-page mirrors are rejected", async () => {
+    // hdhub4u.bi/.ec/.ms answer 200 with marketing copy and no catalogue.
+    // Accepting one would cache it and return an empty library forever.
+    const { context, calls } = createContext({
+      settings: { hdhub4uBaseUrl: "hdhub4u.bi" },
+    });
+    const posts = await hh.posts.getPosts({
+      filter: "",
+      page: 1,
+      providerValue: "hdhub4u",
+      signal,
+      providerContext: context,
+    });
+    check(
+      "still returns posts when pointed at a landing page",
+      posts.length > 0,
+      `${posts.length}`,
+    );
+    check(
+      "fell through to a real content mirror",
+      calls.some((c) => /new\d\.hdhub4u\.cl/.test(c.url)),
+      calls.map((c) => c.url).join(" "),
+    );
+    check(
+      "did not cache the landing page as the working mirror",
+      (await context.kvStore.get("hdhub4uMirror")) !== "https://hdhub4u.bi",
+      String(await context.kvStore.get("hdhub4uMirror")),
+    );
   });
 
   await section("hdhub4u: search", async () => {
