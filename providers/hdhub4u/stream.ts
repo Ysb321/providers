@@ -64,6 +64,75 @@ async function unwrapHubdrive({
 }
 
 /**
+ * Resolves a `hubcdn.sbs/file/<id>` link.
+ *
+ * Despite the shared "hub" prefix this is NOT a HubCloud page - it is a bare
+ * 302 to a throwaway redirector (`inventoryidea.com/?r=<base64>`) whose
+ * payload decodes to `hubcdn.sbs/dl/?link=<real file>`. Handing it to the
+ * hubcloud extractor (which expects a /drive/ page carrying `var url = ...`)
+ * finds nothing, which is why the first link on every movie page failed.
+ *
+ * Returns a direct media url when the chain resolves, otherwise a url for the
+ * caller to keep resolving (e.g. a genuine hubcloud page).
+ */
+async function resolveHubcdn({
+  url,
+  providerContext,
+  signal,
+}: {
+  url: string;
+  providerContext: ProviderContext;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const { axios } = providerContext;
+  try {
+    const res = await axios.get(url, {
+      headers: extractorHeaders(providerContext.commonHeaders),
+      signal,
+      timeout: 20000,
+      maxRedirects: 5,
+      validateStatus: (s: number) => s < 500,
+    });
+
+    // Wherever we ended up - the final url after redirects, or a JS/meta hop
+    // inside the body - may itself be the encoded redirector.
+    const body: string = typeof res.data === "string" ? res.data : "";
+    const landed =
+      res?.request?.responseURL ||
+      res?.request?.res?.responseUrl ||
+      (res?.headers?.location as string) ||
+      "";
+    const hop =
+      (/<meta[^>]+url=([^"'>]+)/i.exec(body) || [])[1] ||
+      (/location\.(?:replace|href)\s*=\s*['"]([^'"]+)/i.exec(body) || [])[1] ||
+      "";
+
+    for (const candidate of [landed, hop]) {
+      if (!candidate || !/^https?:\/\//i.test(candidate)) continue;
+      if (isRedirector(candidate)) {
+        const decoded = unwrapRedirector(candidate);
+        if (decoded !== candidate) return decoded;
+      }
+      if (/hubcloud\.[a-z]+\/drive\//i.test(candidate)) return candidate;
+      if (/\.(mkv|mp4)(\?|$)/i.test(candidate) || /r2\.dev|cloudflarestorage/i.test(candidate)) {
+        return candidate;
+      }
+    }
+
+    // Some responses embed the encoded target directly in the markup.
+    const embedded = /https?:\/\/[^"'\s]+\/\?(?:id|r)=[A-Za-z0-9+/=_-]{16,}/i.exec(body);
+    if (embedded) {
+      const decoded = unwrapRedirector(embedded[0]);
+      if (decoded !== embedded[0]) return decoded;
+    }
+    return url;
+  } catch (err) {
+    console.log(`hdhub4u: could not resolve ${url}:`, err);
+    return url;
+  }
+}
+
+/**
  * Follows a `?id=`/`?r=` redirector to the file host behind it.
  *
  * The payload is base64 of the destination (sometimes wrapped in a
@@ -140,6 +209,27 @@ async function resolveHost({
 
   try {
     if (HUBCLOUD_HOSTS.test(url)) {
+      // hubcdn.sbs/file/ is a redirector, not a HubCloud page - resolve it
+      // first, and return immediately if it lands on a real media file.
+      if (/hubcdn\.[a-z]+\/file\//i.test(url)) {
+        const resolved = await resolveHubcdn({ url, providerContext, signal });
+        if (resolved !== url) {
+          if (
+            /\.(mkv|mp4)(\?|$)/i.test(resolved) ||
+            /r2\.dev|cloudflarestorage/i.test(resolved)
+          ) {
+            return [
+              {
+                server: "HDHub4u Direct",
+                link: resolved,
+                type: /\.mp4(\?|$)/i.test(resolved) ? "mp4" : "mkv",
+                headers: { Referer: "https://hubcdn.sbs/" },
+              },
+            ];
+          }
+          url = resolved;
+        }
+      }
       const target = await unwrapHubdrive({ url, providerContext, signal });
       return (
         (await hubcloudExtractor(
@@ -252,11 +342,18 @@ export const getStream = async function ({
       throw new Error(`no supported file host found for ${link}`);
     }
 
+    // Try every host, not just the first. The qualities on a page are hosted
+    // independently, so one dead mirror must not sink the whole title - stop
+    // as soon as something resolves, but keep going while nothing has.
     let streams: Stream[] = [];
     for (const target of targets) {
-      streams = streams.concat(
-        await resolveHost({ url: target, providerContext, signal, isDownload }),
-      );
+      try {
+        streams = streams.concat(
+          await resolveHost({ url: target, providerContext, signal, isDownload }),
+        );
+      } catch (err) {
+        console.log(`hdhub4u: ${target} threw while resolving:`, err);
+      }
       if (streams.length) break;
     }
 

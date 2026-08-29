@@ -580,6 +580,28 @@ Without those, `getMeta` parses a perfectly valid page, finds nothing playable,
 and fails with *"no download links found"*. Both headers are now sent on every
 request (the reference provider sends the same pair).
 
+### HDHub4u: hubcdn is not HubCloud
+
+`hubcdn.sbs/file/<id>` is the **first link on every movie page**, so it is what
+the app plays by default. Despite the shared `hub` prefix it is not a HubCloud
+page — it is a bare 302:
+
+```
+hubcdn.sbs/file/<id>
+  → 302 → inventoryidea.com/?r=<base64>
+            base64 → hubcdn.sbs/dl/?link=https://pub-….r2.dev/<file>
+```
+
+Routing it to the hubcloud extractor (which expects a `/drive/` page carrying
+`var url = …`) finds nothing, and because it is link #0 the whole title failed
+with *"every file host … failed to resolve"* — even though the other qualities
+were fine. `resolveHubcdn()` follows the redirect, decodes the payload and
+returns the direct file.
+
+Note the redirector cannot be detected from the original URL: it is
+`/file/<id>`, and the `?r=<base64>` form only appears *after* following the
+302.
+
 ### HDHub4u: the site cookie must not reach the file hosts
 
 `Cookie: xla=s4t` unlocks the download block **on hdhub4u only**. It must not
@@ -602,7 +624,8 @@ Three kinds of link appear in that block, and they need different handling:
 
 | Link | Handling |
 | --- | --- |
-| `hubdrive.tips`, `hubcdn.sbs` | unwrapped to HubCloud, then the shared extractor |
+| `hubdrive.tips` | landing page — unwrapped to HubCloud, then the shared extractor |
+| `hubcdn.sbs/file/` | **302 redirector**, not a HubCloud page — see below |
 | `greenmountmotors.com/?id=<base64>` | **redirector** — decode to the real file |
 | `hdstream4u.com`, `hubstream.art` | browser-only players — excluded |
 

@@ -717,6 +717,171 @@ const restoreFetch = installFetchStub();
     );
   });
 
+  await section("hdhub4u: hubcdn is a redirector, not a HubCloud page", async () => {
+    // This is link #0 on every movie page - the one the app plays first.
+    // Despite the shared "hub" prefix, hubcdn.sbs/file/ is a bare 302 to an
+    // encoded redirector, NOT a /drive/ page. Handing it to the hubcloud
+    // extractor finds nothing and the whole title fails.
+    const REDIRECTOR =
+      "https://inventoryidea.com/?r=aHR0cHM6Ly9odWJjZG4uc2JzL2RsLz9saW5rPWh0dHBzOi8vcHViLTg1ODBlYzRiMTAyMjRiYjE4NjUwNDRjMTc5YmRmYzdlLnIyLmRldi8yZTU2NzU2NTAyMDU4ZDkwY2UzZTc3YWY4ZjlmNDU3NA==";
+
+    const get = async (url) => {
+      if (/hubcdn\.sbs\/file\//.test(url)) {
+        // Mirrors the live 302: body is a stub, the target is the final url.
+        return {
+          status: 200,
+          data: "Redirecting ..",
+          headers: {},
+          request: { responseURL: REDIRECTOR },
+        };
+      }
+      return { status: 404, data: "", headers: {} };
+    };
+
+    const store = new Map();
+    let streams = [];
+    let message = "";
+    try {
+      streams = await hh.stream.getStream({
+        link: "https://hubcdn.sbs/file/FDhLkHbY4wQTtgOccIrnN1K1S",
+        type: "movie",
+        signal,
+        providerContext: {
+          axios: Object.assign(get, {
+            get,
+            post: async () => ({ status: 404, data: "", headers: {} }),
+            head: async () => ({ status: 200, data: "", headers: {} }),
+          }),
+          cheerio: require("cheerio"),
+          commonHeaders: {},
+          openWebView: async () => {
+            throw new Error("no webview");
+          },
+          kvStore: {
+            get: async (k) => store.get(k),
+            set: async (k, v) => void store.set(k, v),
+            delete: async (k) => store.delete(k),
+            keys: async () => Array.from(store.keys()),
+            clear: async () => store.clear(),
+          },
+        },
+      });
+    } catch (err) {
+      message = err.message;
+    }
+
+    check("the first link on a movie page resolves", streams.length > 0, message);
+    check(
+      "followed the 302 and decoded the redirector",
+      streams.some((s) => /r2\.dev|cloudflarestorage/i.test(s.link)),
+      streams.map((s) => s.link.slice(0, 56)).join(" | "),
+    );
+    check(
+      "no hubcdn/redirector url returned as a stream",
+      !streams.some((s) => /hubcdn\.sbs\/file|inventoryidea/i.test(s.link)),
+    );
+    check(
+      "carries the Referer the CDN needs",
+      streams.every((s) => s.headers && s.headers.Referer),
+    );
+  });
+
+  await section("hdhub4u: a dead first host does not sink the title", async () => {
+    // Qualities are hosted independently. If link #0 is dead the provider must
+    // keep trying the rest rather than giving up on the whole title.
+    const get = async (url) => {
+      if (/hubcdn\.sbs\/file\//.test(url)) {
+        const err = new Error("Request failed with status code 404");
+        err.response = { status: 404, data: "" };
+        throw err;
+      }
+      if (/hubdrive\.tips/.test(url)) {
+        return {
+          status: 200,
+          data: '<html><body><a href="https://hubcloud.cx/drive/ok1">[HubCloud Server]</a></body></html>',
+          headers: {},
+        };
+      }
+      if (/hubcloud\.cx\/drive\//.test(url)) {
+        return {
+          status: 200,
+          data: "<html><body><script>var url='https://gamerxyt.com/hubcloud.php?host=hubcloud&id=ok1&token=t';</script></body></html>",
+          headers: {},
+        };
+      }
+      if (/gamerxyt/.test(url)) {
+        return {
+          status: 200,
+          data: '<html><body><a class="btn btn-success btn-lg h6" href="https://f8.r2.cloudflarestorage.com/hub/ok?X-Amz-Signature=s">Download [FSL Server]</a></body></html>',
+          headers: {},
+        };
+      }
+      return { status: 404, data: "", headers: {} };
+    };
+
+    const originalFetch = global.fetch;
+    global.fetch = async (input) => {
+      const url = typeof input === "string" ? input : input?.url;
+      const res = await get(url).catch(() => ({ status: 404, data: "" }));
+      return {
+        ok: res.status < 400,
+        status: res.status,
+        url,
+        headers: { get: () => null },
+        text: async () => (typeof res.data === "string" ? res.data : ""),
+        json: async () => ({}),
+      };
+    };
+
+    const store = new Map();
+    let streams = [];
+    try {
+      // meta.ts hands over one link at a time, so emulate the page order by
+      // resolving the dead one first and then the healthy one.
+      const ctx = {
+        axios: Object.assign(get, {
+          get,
+          post: async () => ({ status: 404, data: "", headers: {} }),
+          head: async () => ({ status: 200, data: "", headers: {} }),
+        }),
+        cheerio: require("cheerio"),
+        commonHeaders: {},
+        openWebView: async () => {
+          throw new Error("no webview");
+        },
+        kvStore: {
+          get: async (k) => store.get(k),
+          set: async (k, v) => void store.set(k, v),
+          delete: async (k) => store.delete(k),
+          keys: async () => Array.from(store.keys()),
+          clear: async () => store.clear(),
+        },
+      };
+      await hh.stream
+        .getStream({
+          link: "https://hubcdn.sbs/file/dead",
+          type: "movie",
+          signal,
+          providerContext: ctx,
+        })
+        .catch(() => undefined);
+      streams = await hh.stream.getStream({
+        link: "https://hubdrive.tips/file/2133030588",
+        type: "movie",
+        signal,
+        providerContext: ctx,
+      });
+    } finally {
+      global.fetch = originalFetch;
+    }
+
+    check("a healthy host still resolves", streams.length > 0, `${streams.length}`);
+    check(
+      "reaches the media file",
+      streams.some((s) => /cloudflarestorage|r2\.dev/i.test(s.link)),
+    );
+  });
+
   await section("hdhub4u: site cookie must not reach file hosts", async () => {
     // The site-gate cookie (xla=s4t) belongs to hdhub4u only. The shared
     // hubcloud extractor injects its own bundle - including cf_clearance -
