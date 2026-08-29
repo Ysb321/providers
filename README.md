@@ -12,6 +12,8 @@ Vega App provider extensions, based on the
 | MovieBox Online | `movieBoxOnline` | https://movieboxonline.net |
 | NetMirror | `net77` | https://net77.cc |
 | Redflix | `redflix` | https://redflix.club |
+| MoviesDrive | `moviesDrive` | https://moviesdrives.mov |
+| HDHub4u | `hdhub4u` | https://hdhub4u.bi |
 
 ## YoMovies provider
 
@@ -511,3 +513,105 @@ this naturally, but a proxy between resolution and playback will not.
 Only Videasy and VidFast are wired up. The remaining sources exposed on the
 Redflix player each need their own reverse-engineering and are not implemented;
 VidLink is stubbed out entirely because its API is currently dead.
+
+---
+
+## Hindi providers (MoviesDrive, HDHub4u)
+
+`providers/moviesDrive/` and `providers/hdhub4u/` are Hindi-first catalogues:
+Bollywood, Hindi-dubbed Hollywood, South Hindi dubs, and dual-audio web series.
+Both are WordPress sites that publish **download links to file hosts** rather
+than hosting media, so both reuse this repo's existing
+`providers/extractors/{hubcloud,gdflix,gofile}.ts` for the final hop.
+
+Chosen over the other candidates because their link chains resolve without a
+human-verification wall. MoviesMod, for example, routes every download through
+`links.modpro.blog` → `cloud.unblockedgames.world`, which serves a "Please
+verify that you are human" interstitial — unusable from a provider.
+
+### Verified chains
+
+Both end at the same two hosts, which our extractors already understand:
+
+```
+MoviesDrive  post page ──► mdrive.lol/archive/<id> ──► hubcloud.cx/drive/<id>  ──► signed R2 / 10Gbps / Pixeldrain
+                                                  └──► gdflix.dev/file/<id>    ──► instant.busycdn / R2
+
+HDHub4u      post page ──► hubdrive.tips/file/<id> ──► hubcloud.cx/drive/<id>  ──► (as above)
+                       └──► hubcdn.sbs/file/<id>
+```
+
+`hubdrive.tips` is a landing page, not the file: it exposes a
+`[HubCloud Server]` link to the real entry, so `hdhub4u/stream.ts` unwraps it
+before handing off to the extractor.
+
+### Endpoints
+
+| Purpose | MoviesDrive | HDHub4u |
+| --- | --- | --- |
+| Listing | `/`, `/category/<slug>/page/N/` | `/`, `/category/<slug>/page/N/` |
+| Search | `/search.php?q=&page=` (Typesense JSON) | `/?s=` and `/page/N/?s=` |
+| Detail | `/<slug>/` | `/<slug>/` |
+| Episodes | `mdrive.lol/archive/<id>` | in-page `EPiSODE N` headings |
+
+MoviesDrive exposes a **Typesense-backed JSON search**, which is far more
+reliable than scraping its results page; HDHub4u only has WordPress `?s=`.
+
+### Domain rotation
+
+Both sites rotate domains constantly and are DNS-blocked by Indian ISPs — which
+surfaces as a network error with *no HTTP response*, so retrying the same host
+never recovers. Each provider ships a mirror list and fails over automatically,
+caching whichever mirror answered in `kvStore`. Users can pin a domain in
+settings.
+
+### Structural quirks handled
+
+- **Post links are stored site-relative** (`/the-whisper-man-2026.../`) so a
+  saved library entry keeps working after the domain rotates.
+- **Zip / PACK links are excluded** from streaming results. These are multi-GB
+  whole-season archives (`1080p WEB-DL PACK [27.2GB]`, `720p Zip [2.5GB]`) —
+  a player cannot open them, so offering them as a "stream" is a dead end.
+- **Screenshots are not posters.** Both pages embed 8+ `catimages.org` /
+  `vlcsnap` stills; the poster picker skips those and the Telegram/WhatsApp
+  banners.
+- **Series layouts differ.** MoviesDrive groups by season and defers to
+  `episodes.ts` (each season is its own archive page); HDHub4u lists every
+  episode inline under `EPiSODE N` headings, so `meta.ts` groups them into one
+  row per quality with the episodes as `directLinks`.
+- **Synopsis terminator.** Both pages separate blocks with single newlines, so
+  a blank-line-terminated regex silently matched nothing — the offline suite
+  caught this and it is now anchored on the next block heading or EOL.
+
+### Tests
+
+```bash
+npm run test:hindi        # offline: replays captured responses (99 assertions)
+npm run test:hindi:live   # online: walks several real titles end to end
+```
+
+The offline suite exercises **both providers across four content shapes** —
+a dual-audio movie (The Whisper Man), a Hindi-only movie (Awarapan 2 / Alpha),
+a multi-season dual-audio series (Reacher S1–S4) and a Hindi web series
+(Mousetrap S1) — because movies and series are laid out very differently on
+these sites. The mock serves the same markup the real file hosts return, so the
+**genuine hubcloud/gdflix extractor code runs** rather than being stubbed.
+
+The live script takes an optional provider and title:
+
+```bash
+npm run test:hindi:live -- moviesDrive
+npm run test:hindi:live -- hdhub4u "Alpha"
+```
+
+It probes each resolved link with a ranged GET and reports whether it served
+real media, an HTML error page, or failed — then prints a pass/fail table per
+title.
+
+### Known limitations
+
+These are download-index sites: links expire when the uploader rotates them,
+and a title can be listed while its file host is already dead. Both providers
+try every mirror on a page and raise a clear error rather than returning a link
+that will not play. Playback quality depends entirely on the upload (HQ-HDTC
+cam rips are labelled as such in the title, and are passed through unchanged).

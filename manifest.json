@@ -43,5 +43,23 @@
     "type": "global",
     "hasSettings": true,
     "disabled": false
+  },
+  {
+    "display_name": "MoviesDrive",
+    "value": "moviesDrive",
+    "version": "1.0",
+    "icon": "https://new3.moviesdrive.christmas/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
+  },
+  {
+    "display_name": "HDHub4u",
+    "value": "hdhub4u",
+    "version": "1.0",
+    "icon": "https://new5.hdhub4u.cl/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
   }
 ]

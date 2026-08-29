@@ -21,7 +21,9 @@
     "watch:dev": "nodemon --watch providers --ext ts --exec \"npm run build\" & npm run dev",
     "dev:auto": "concurrently \"nodemon --watch providers --ext ts --exec \\\"npm run build:dev\\\"\" \"npm run dev\"",
     "auto": "node auto-dev.js",
-    "start": "npm run build && npm run dev"
+    "start": "npm run build && npm run dev",
+    "test:hindi": "node tests/hindi/run.js",
+    "test:hindi:live": "node tests/hindi/live-check.js"
   },
   "devDependencies": {
     "@types/cheerio": "^0.22.35",
