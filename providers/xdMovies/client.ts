@@ -15,8 +15,26 @@ export const xdHeaders: Record<string, string> = {
   "Upgrade-Insecure-Requests": "1",
   "Sec-Fetch-Dest": "document",
   "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
 };
+
+/**
+ * Sec-Fetch-Site must agree with the Referer, or Cloudflare bot management
+ * scores the request as automated. Sending `none` (meaning "user typed this
+ * URL") together with a Referer is contradictory: a real browser sends
+ * `same-origin` when navigating within a site. This is why listing pages
+ * passed while deep /movies/ URLs were refused.
+ */
+function fetchSite(url: string, referer?: string): string {
+  if (!referer) return "none";
+  try {
+    return new URL(url).origin === new URL(referer).origin
+      ? "same-origin"
+      : "cross-site";
+  } catch {
+    return "same-origin";
+  }
+}
 
 export async function getBaseUrl(
   providerContext: ProviderContext,
@@ -66,7 +84,7 @@ function isChallenge(body: unknown): boolean {
   if (typeof body !== "string") return false;
   return (
     /_cf_chl_opt|cdn-cgi\/challenge-platform|Just a moment/i.test(body) &&
-    !/xdmovies|Download Links|\/movies\/|\/series\//i.test(body)
+    !/Download Links|Star Cast|image\.tmdb\.org/i.test(body)
   );
 }
 
@@ -87,9 +105,11 @@ export async function fetchPage({
   const stored = await getStored(providerContext);
 
   const buildHeaders = () => {
+    const ref = referer || origin + "/";
     const h: Record<string, string> = {
       ...xdHeaders,
-      Referer: referer || origin + "/",
+      Referer: ref,
+      "Sec-Fetch-Site": fetchSite(url, ref),
     };
     if (stored.cookie) h.Cookie = stored.cookie;
     if (stored.userAgent) h["User-Agent"] = stored.userAgent;
@@ -121,6 +141,23 @@ export async function fetchPage({
       });
       await store(providerContext, result.cookies || "", result.userAgent || "");
       if (result.data && !isChallenge(result.data)) return result.data;
+
+      // The WebView may hand back the challenge shell rather than the page.
+      // Retry over HTTP now that we hold a valid cf_clearance cookie.
+      const ref = referer || origin + "/";
+      const retry = await axios.get(url, {
+        headers: {
+          ...xdHeaders,
+          Referer: ref,
+          "Sec-Fetch-Site": fetchSite(url, ref),
+          "User-Agent": result.userAgent || xdHeaders["User-Agent"],
+          Cookie: result.cookies || "",
+        },
+        signal,
+      });
+      if (typeof retry.data === "string" && !isChallenge(retry.data)) {
+        return retry.data;
+      }
     } catch (err) {
       console.error("xdMovies WAF solver failed:", err);
     }

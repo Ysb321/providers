@@ -241,6 +241,17 @@ release files (TMDB-backed metadata, `S01E02`-style filenames).
 - `catalog.ts` – Latest / Movies / Series, driven by the site's `?type=` filter.
 - `client.ts` – shared fetch layer with the Cloudflare `openWebView` solver and
   `cf_clearance` caching used by the other providers, plus a mirror override.
+
+  **`Sec-Fetch-Site` must match the `Referer`.** Sending `none` (which means
+  "the user typed this URL") alongside a `Referer` is self-contradictory, and
+  Cloudflare bot management scores it as automated. The root listing URL
+  happened to look plausible that way, but deep `/movies/...` URLs were
+  refused - which is why Catalog passed while Metadata failed. The header is
+  now derived from the referer (`same-origin` / `cross-site` / `none`).
+
+  After the WebView solves a challenge it may hand back the challenge shell
+  rather than the page, so the request is retried over HTTP with the fresh
+  `cf_clearance` cookie.
 - `posts.ts` – listing pages are `?type=<t>&page=<n>`; each card links to
   `/movies/<slug>-<tmdbId>` or `/series/<slug>-<tmdbId>`.
 - `meta.ts` – title, poster, rating, genres, cast and synopsis. Release
