@@ -1,0 +1,19 @@
+[
+  {
+    "display_name": "Dooflix",
+    "value": "dooflix",
+    "version": "1.5",
+    "icon": "",
+    "type": "india",
+    "disabled": true
+  },
+  {
+    "display_name": "Roshy",
+    "value": "roshy",
+    "version": "1.0",
+    "icon": "",
+    "type": "english",
+    "disabled": false,
+    "hasSettings": true
+  }
+]
