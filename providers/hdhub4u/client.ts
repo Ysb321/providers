@@ -31,11 +31,20 @@ export const MIRRORS = [
 const DESKTOP_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+/**
+ * HDHub4u gates the download-link block behind a visitor cookie and an
+ * external referer. Without `xla=s4t` the post page still renders - title,
+ * poster, storyline, screenshots all present - but the "DOWNLOAD LINKS"
+ * section is withheld, so getMeta finds nothing to play and fails with
+ * "no download links found". The reference provider sends the same pair.
+ */
 export const pageHeaders: Record<string, string> = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9",
   "Upgrade-Insecure-Requests": "1",
+  Cookie: "xla=s4t",
+  Referer: "https://google.com",
   "User-Agent": DESKTOP_UA,
 };
 
@@ -206,9 +215,56 @@ export function qualityFromText(
  * a `[HubCloud Server]` link to the real file (verified live).
  */
 export function isFileHost(url: string): boolean {
-  return /(hubcloud|hubdrive|hubcdn|vcloud|driveleech|driveseed|gdflix|gdlink|gofile\.io|pixeldrain)/i.test(
-    url,
+  return (
+    /(hubcloud|hubdrive|hubcdn|vcloud|driveleech|driveseed|gdflix|gdlink|gofile\.io|pixeldrain)/i.test(
+      url,
+    ) || isRedirector(url)
   );
+}
+
+/**
+ * Some qualities are published behind a throwaway redirector domain
+ * (`greenmountmotors.com/?id=<base64>`, `inventoryidea.com/?r=<base64>`)
+ * rather than a named file host. They still lead to a real file - the payload
+ * decodes to a hubcdn/R2 url - so they must not be filtered out, or the only
+ * links left on some pages are the ones we reject and the title looks empty.
+ *
+ * Matched structurally (single `id`/`r` query param holding base64) rather
+ * than by hostname, because the domain is rotated constantly.
+ */
+export function isRedirector(url: string): boolean {
+  return /^https?:\/\/[^/]+\/\?(?:id|r)=[A-Za-z0-9+/=_-]{16,}$/i.test(url);
+}
+
+/**
+ * Playback-only players. They stream in a browser but expose no file we can
+ * hand to the app's video pipeline, so they are not offered as sources.
+ */
+export function isPlayerOnly(url: string): boolean {
+  return /(hdstream4u|hubstream)\./i.test(url);
+}
+
+const B64_ALPHABET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/**
+ * Minimal base64 decoder. The provider sandbox does not guarantee the usual
+ * platform decoders, so this is implemented from the alphabet directly.
+ */
+export function decodeBase64(input: string): string {
+  const clean = (input || "").replace(/[^A-Za-z0-9+/=]/g, "");
+  let out = "";
+  for (let i = 0; i < clean.length; i += 4) {
+    const c0 = B64_ALPHABET.indexOf(clean[i]);
+    const c1 = B64_ALPHABET.indexOf(clean[i + 1]);
+    const c2 = B64_ALPHABET.indexOf(clean[i + 2]);
+    const c3 = B64_ALPHABET.indexOf(clean[i + 3]);
+    if (c0 < 0 || c1 < 0) break;
+    out += String.fromCharCode((c0 << 2) | (c1 >> 4));
+    if (c2 >= 0) out += String.fromCharCode(((c1 & 15) << 4) | (c2 >> 2));
+    if (c3 >= 0) out += String.fromCharCode(((c2 & 3) << 6) | c3);
+  }
+  return out;
 }
 
 /**

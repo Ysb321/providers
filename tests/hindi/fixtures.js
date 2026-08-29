@@ -202,9 +202,11 @@ const HH_MOVIE_HTML = `<!doctype html><html><body>
 <p>Storyline: When his young son vanishes, a widower enlists help from his estranged father, a retired detective who put away the serial killer now linked to the case.</p>
 <h3><a href="https://hubcdn.sbs/file/1IWMsG2XQqxaiFXEwtKxEnAT6">480p⚡[440MB]</a></h3>
 <h4><a href="https://hubdrive.tips/file/2133030588">720p 10Bit HEVC [860MB]</a></h4>
+<h3><a href="https://greenmountmotors.com/?id=YitRWEJGTE5ROU5OY2xpNlExeGF3WVQ2SW1xMUpJQWJDbWE2L04xOVEzcDFGWjV2bXluV2xmMlFveTFvNGhWVW1oelRFOWFSdFZQUnNTVnRtVFNjeHg4RTVqWGpJVVJQc0VWa1V6RTlYckU9">720p x264 [1.1GB]</a></h3>
 <h4><a href="https://hubdrive.tips/file/9423583613">1080p WEB-DL [7.6GB]</a></h4>
 <h4><a href="https://hubdrive.tips/file/7321886410">4K [2160p SDR WEB-DL – 14.4GB]</a></h4>
-<h4><a href="https://hdstream4u.com/file/vfxapuaw979l">WATCH</a></h4>
+<h4><a href="https://hdstream4u.com/file/vfxapuaw979l">WATCH</a> | <a href="https://hubstream.art/#uceutg">PLAYER-2</a></h4>
+<h4><a href="https://4khdhub.one/the-whisper-man-movie-7885/">4K | SDR | HDR | DV | HEVC</a></h4>
 </body></html>`;
 
 /** Series page: per-episode headings, each with 720p/1080p Drive + Instant. */

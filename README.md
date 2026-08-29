@@ -565,6 +565,38 @@ never recovers. Each provider ships a mirror list and fails over automatically,
 caching whichever mirror answered in `kvStore`. Users can pin a domain in
 settings.
 
+### HDHub4u gates its download links
+
+The post page renders fine without them — title, poster, storyline,
+screenshots — but the **DOWNLOAD LINKS block is withheld** unless the request
+carries a visitor cookie and an external referer:
+
+```
+Cookie:  xla=s4t
+Referer: https://google.com
+```
+
+Without those, `getMeta` parses a perfectly valid page, finds nothing playable,
+and fails with *"no download links found"*. Both headers are now sent on every
+request (the reference provider sends the same pair).
+
+### HDHub4u link hosts
+
+Three kinds of link appear in that block, and they need different handling:
+
+| Link | Handling |
+| --- | --- |
+| `hubdrive.tips`, `hubcdn.sbs` | unwrapped to HubCloud, then the shared extractor |
+| `greenmountmotors.com/?id=<base64>` | **redirector** — decode to the real file |
+| `hdstream4u.com`, `hubstream.art` | browser-only players — excluded |
+
+The redirector is a throwaway domain that rotates constantly, so it is matched
+structurally (a lone `?id=`/`?r=` param holding base64) rather than by
+hostname. The payload decodes to the destination, sometimes wrapped one more
+level as `hubcdn.sbs/dl/?link=<real>`; both are unwrapped, yielding a direct
+R2/CDN file. Dropping these links entirely — as an earlier version did — loses
+the `720p x264` and `1080p x264` qualities on most movie pages.
+
 ### HDHub4u listing markup
 
 The poster is **not inside the link**. One listing entry is three siblings:

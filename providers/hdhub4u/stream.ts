@@ -6,9 +6,12 @@ import { gofileExtractor } from "../extractors/gofile";
 import {
   PROVIDER_NAME,
   absolutise,
+  decodeBase64,
   fetchPage,
   isFileHost,
   isPackLink,
+  isPlayerOnly,
+  isRedirector,
   pageHeaders,
   qualityFromText,
 } from "./client";
@@ -60,6 +63,27 @@ async function unwrapHubdrive({
   }
 }
 
+/**
+ * Follows a `?id=`/`?r=` redirector to the file host behind it.
+ *
+ * The payload is base64 of the destination (sometimes wrapped in a
+ * `hubcdn.sbs/dl/?link=<real>` hop), and the page itself is a JS/meta
+ * redirect, so decode it directly rather than relying on the HTTP redirect.
+ */
+function unwrapRedirector(url: string): string {
+  const encoded = (/[?&](?:id|r)=([A-Za-z0-9+/=_-]{16,})/.exec(url) || [])[1];
+  if (!encoded) return url;
+  try {
+    const decoded = decodeBase64(encoded.replace(/-/g, "+").replace(/_/g, "/"));
+    if (!/^https?:\/\//i.test(decoded)) return url;
+    // `hubcdn.sbs/dl/?link=<real>` wraps the actual media url.
+    const inner = (/[?&]link=(https?:\/\/[^&\s]+)/i.exec(decoded) || [])[1];
+    return inner || decoded;
+  } catch {
+    return url;
+  }
+}
+
 async function resolveHost({
   url,
   providerContext,
@@ -73,6 +97,44 @@ async function resolveHost({
 }): Promise<Stream[]> {
   const { axios, cheerio, commonHeaders } = providerContext;
   const headers = { ...pageHeaders, ...(commonHeaders || {}) };
+
+  // A redirector hides the real host - resolve it before dispatching.
+  if (isRedirector(url)) {
+    const target = unwrapRedirector(url);
+    if (target !== url) {
+      // Decoded straight to a media file: hand it over as-is.
+      if (/\.(mkv|mp4|avi)(\?|$)/i.test(target) || /r2\.dev|cloudflarestorage/i.test(target)) {
+        return [
+          {
+            server: "HDHub4u Direct",
+            link: target,
+            type: /\.mp4(\?|$)/i.test(target) ? "mp4" : "mkv",
+            headers: { Referer: "https://hubcdn.sbs/" },
+          },
+        ];
+      }
+      url = target;
+    } else {
+      // Could not decode - follow the redirect chain instead.
+      try {
+        const res = await axios.get(url, {
+          headers,
+          signal,
+          timeout: 20000,
+          maxRedirects: 5,
+          validateStatus: (s: number) => s < 500,
+        });
+        const body = typeof res.data === "string" ? res.data : "";
+        const hop =
+          (/<meta[^>]+url=([^"'>]+)/i.exec(body) || [])[1] ||
+          (/location\.(?:replace|href)\s*=\s*['"]([^'"]+)/i.exec(body) || [])[1];
+        if (hop && /^https?:\/\//i.test(hop)) url = hop;
+      } catch (err) {
+        console.log(`hdhub4u: redirector ${url} failed:`, err);
+        return [];
+      }
+    }
+  }
 
   try {
     if (HUBCLOUD_HOSTS.test(url)) {
@@ -152,7 +214,7 @@ async function collectFileHosts({
 
   $("a[href]").each((_, el) => {
     const href = $(el).attr("href") || "";
-    if (!href || !isFileHost(href)) return;
+    if (!href || !isFileHost(href) || isPlayerOnly(href)) return;
     const link = absolutise(href, baseUrl);
     if (seen.has(link)) return;
     if (isPackLink($(el).text(), link)) return;

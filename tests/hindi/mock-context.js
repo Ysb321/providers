@@ -100,7 +100,7 @@ function createContext(opts = {}) {
         return ok(F.HH_LANDING_HTML);
       }
       if (/mousetrap|season/i.test(url)) return ok(F.HH_SERIES_HTML);
-      if (/the-whisper-man|alpha-2026/i.test(url)) return ok(F.HH_MOVIE_HTML);
+      if (/the-whisper-man|alpha-2026|the-last-sunrise/i.test(url)) return ok(F.HH_MOVIE_HTML);
       return ok(F.HH_LIST_HTML);
     }
     if (/hubdrive\.tips/i.test(url)) {

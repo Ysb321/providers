@@ -551,10 +551,83 @@ const restoreFetch = installFetchStub();
       info.linkList.map((l) => `${l.title}=${l.quality}`).join(" | "),
     );
     check(
-      "all links are file hosts",
+      "all links are resolvable hosts (named host or redirector)",
       info.linkList.every((l) =>
-        /hubdrive|hubcdn|hubcloud/i.test(l.directLinks[0].link),
+        /hubdrive|hubcdn|hubcloud|\?id=/i.test(l.directLinks[0].link),
       ),
+      info.linkList.map((l) => l.directLinks[0].link.slice(0, 34)).join(" | "),
+    );
+    check(
+      "browser-only players are excluded",
+      !info.linkList.some((l) =>
+        /hdstream4u|hubstream/i.test(l.directLinks[0].link),
+      ),
+    );
+  });
+
+  await section("hdhub4u: gated download block", async () => {
+    // The site withholds the DOWNLOAD LINKS section unless the request carries
+    // the visitor cookie and an external referer. The page still renders
+    // (title, poster, storyline), so getMeta silently found nothing to play.
+    const { context, calls } = createContext();
+    await hh.meta.getMeta({
+      link: "/the-whisper-man-2026-hindi-webrip-full-movie/",
+      providerContext: context,
+    });
+    const headers = (calls.find((c) => /hdhub4u/.test(c.url)) || {}).config
+      ?.headers || {};
+    check("sends the xla visitor cookie", /xla=s4t/.test(headers.Cookie || ""), String(headers.Cookie));
+    check(
+      "sends an external referer",
+      /google\.com/.test(headers.Referer || ""),
+      String(headers.Referer),
+    );
+  });
+
+  await section("hdhub4u: redirector + player-only links", async () => {
+    const { context } = createContext();
+    const info = await hh.meta.getMeta({
+      link: "/the-last-sunrise-2026-hindi-webrip-full-movie/",
+      providerContext: context,
+    });
+    const all = info.linkList.flatMap((l) => l.directLinks || []);
+
+    check("finds download links", info.linkList.length > 0, `${info.linkList.length}`);
+    check(
+      "keeps the ?id= redirector qualities",
+      all.some((d) => /greenmountmotors|\?id=/i.test(d.link)),
+      all.map((d) => d.link.slice(0, 40)).join(" | "),
+    );
+    check(
+      "drops browser-only players (hdstream4u / hubstream)",
+      !all.some((d) => /hdstream4u|hubstream/i.test(d.link)),
+    );
+    check(
+      "covers 480p through 4K",
+      ["480", "720", "1080", "2160"].every((q) =>
+        info.linkList.some((l) => l.quality === q),
+      ),
+      info.linkList.map((l) => l.quality).join(","),
+    );
+
+    // A redirector must resolve to the real media file, not be handed over raw.
+    const { context: sc } = createContext();
+    const streams = await hh.stream.getStream({
+      link:
+        "https://inventoryidea.com/?r=aHR0cHM6Ly9odWJjZG4uc2JzL2RsLz9saW5rPWh0dHBzOi8vcHViLTg1ODBlYzRiMTAyMjRiYjE4NjUwNDRjMTc5YmRmYzdlLnIyLmRldi8yZTU2NzU2NTAyMDU4ZDkwY2UzZTc3YWY4ZjlmNDU3NA==",
+      type: "movie",
+      signal,
+      providerContext: sc,
+    });
+    check("redirector resolves to a stream", streams.length > 0, `${streams.length}`);
+    check(
+      "decoded to the real CDN file",
+      streams.some((s) => /r2\.dev|cloudflarestorage/i.test(s.link)),
+      streams.map((s) => s.link.slice(0, 50)).join(" | "),
+    );
+    check(
+      "no redirector url leaked as a stream",
+      !streams.some((s) => /inventoryidea|greenmountmotors/i.test(s.link)),
     );
   });
 

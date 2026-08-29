@@ -7,6 +7,7 @@ import {
   fetchPage,
   isFileHost,
   isPackLink,
+  isPlayerOnly,
   qualityFromText,
 } from "./client";
 
@@ -100,7 +101,7 @@ export const getMeta = async function ({
 
         if (tag === "a") {
           const href = node.attr("href") || "";
-          if (!href || !isFileHost(href)) return;
+          if (!href || !isFileHost(href) || isPlayerOnly(href)) return;
           const url = absolutise(href, baseUrl);
           const label = node.text().replace(/\s+/g, " ").trim();
           if (isPackLink(label, url)) return;
@@ -170,7 +171,7 @@ export const getMeta = async function ({
       $("a[href]").each((_, el) => {
         const node = $(el);
         const href = node.attr("href") || "";
-        if (!href || !isFileHost(href)) return;
+        if (!href || !isFileHost(href) || isPlayerOnly(href)) return;
 
         const url = absolutise(href, baseUrl);
         if (seen.has(url)) return;
