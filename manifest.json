@@ -1,0 +1,38 @@
+[
+  {
+    "display_name": "YoMovies",
+    "value": "yomovies",
+    "version": "1.0",
+    "icon": "https://yomovies.energy/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
+  },
+  {
+    "display_name": "ExtraMovies",
+    "value": "extraMovies",
+    "version": "1.0",
+    "icon": "https://extramovies.miami/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
+  },
+  {
+    "display_name": "MovieBox Online",
+    "value": "movieBoxOnline",
+    "version": "1.0",
+    "icon": "https://h5-static.aoneroom.com/ssrStatic/club/public/_nuxt/logo.DMnCL3zY.svg",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
+  },
+  {
+    "display_name": "XDMovies",
+    "value": "xdMovies",
+    "version": "1.0",
+    "icon": "https://top.xdmovies.wtf/favicon.ico",
+    "type": "global",
+    "hasSettings": true,
+    "disabled": false
+  }
+]
