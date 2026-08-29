@@ -48,7 +48,17 @@ function collect(
     // Post permalinks are exactly one slug deep off the site root.
     if (!/^\/[^/]+\/?$/.test(relative)) return;
 
-    const img = anchor.find("img").first();
+    // The poster is NOT inside the anchor. A listing entry is three siblings:
+    //   <img src="poster.jpg" alt="Title">   <a href="/slug/"></a>   <a href="/slug/">Title</a>
+    // so look inside the anchor first (other skins do nest it), then fall back
+    // to the nearest image in the surrounding list item.
+    let img = anchor.find("img").first();
+    if (!img.length) {
+      const container = anchor.closest("li, article, figure, .post, .item");
+      img = (container.length ? container : anchor.parent())
+        .find("img")
+        .first();
+    }
     const image =
       img.attr("src") || img.attr("data-src") || img.attr("data-lazy-src") || "";
 

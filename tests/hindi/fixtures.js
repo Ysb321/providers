@@ -121,10 +121,19 @@ const MD_ARCHIVE_SERIES_HTML = `<!doctype html><html><body>
  * ================================================================== */
 
 /**
- * Listing page. Mirrors the real DOM exactly: each entry has TWO anchors to
- * the same permalink - an image-only one (empty text) followed by the text
- * one carrying the title. Getting this wrong is what made getPosts return an
- * empty array against the live site.
+ * Listing page, matching the LIVE DOM exactly.
+ *
+ * Each entry is three siblings inside the <li> - the poster image, an EMPTY
+ * anchor to the permalink, then the text anchor carrying the title:
+ *
+ *   <img src="poster.jpg" alt="Title ...">
+ *   <a href="/slug/"></a>
+ *   <a href="/slug/">Title ...</a>
+ *
+ * The image is NOT nested inside either anchor. An earlier version of this
+ * fixture wrapped the <img> in the first <a>, which made a broken selector
+ * (`anchor.find("img")`) look correct in tests while returning zero posts
+ * against the real site. Keep the siblings as siblings.
  */
 const HH_LIST_HTML = `<!doctype html><html><body>
 <nav>
@@ -134,23 +143,28 @@ const HH_LIST_HTML = `<!doctype html><html><body>
 </nav>
 <ul>
   <li>
-    <a href="https://new5.hdhub4u.cl/the-whisper-man-2026-hindi-webrip-full-movie/"><img src="https://image.tmdb.org/t/p/w342/oFEnDAN1tFEvPqpOKhNTAPw2NeH.jpg" alt="The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio | Full Movie"></a>
+    <img src="https://image.tmdb.org/t/p/w342/oFEnDAN1tFEvPqpOKhNTAPw2NeH.jpg" alt="The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio | Full Movie">
+    <a href="https://new5.hdhub4u.cl/the-whisper-man-2026-hindi-webrip-full-movie/"></a>
     <a href="https://new5.hdhub4u.cl/the-whisper-man-2026-hindi-webrip-full-movie/">The Whisper Man (2026) WEB-DL [Hindi (DD5.1) &amp; English] 4K 1080p 720p &amp; 480p Dual Audio [x264/10Bit-HEVC] | Full Movie</a>
   </li>
   <li>
-    <a href="https://new5.hdhub4u.cl/alpha-2026-hindi-webrip-full-movie/"><img src="https://image.tmdb.org/t/p/w342/nuLMioRauQacj4bRXRsJX9Oe5H6.jpg" alt="Alpha (2026)"></a>
+    <img src="https://image.tmdb.org/t/p/w342/nuLMioRauQacj4bRXRsJX9Oe5H6.jpg" alt="Alpha (2026)">
+    <a href="https://new5.hdhub4u.cl/alpha-2026-hindi-webrip-full-movie/"></a>
     <a href="https://new5.hdhub4u.cl/alpha-2026-hindi-webrip-full-movie/">Alpha (2026) DS4K WEB-DL [Hindi DD5.1] 4K 1080p 720p &amp; 480p | Full Movie</a>
   </li>
   <li>
-    <a href="https://new5.hdhub4u.cl/mousetrap-season-1-hindi-webrip-all-episodes/"><img src="https://image.tmdb.org/t/p/w342/dXpDkHr8mUAabDVPoEstJ3gzSf6.jpg" alt="Mousetrap (Season 1)"></a>
+    <img src="https://image.tmdb.org/t/p/w342/dXpDkHr8mUAabDVPoEstJ3gzSf6.jpg" alt="Mousetrap (Season 1)">
+    <a href="https://new5.hdhub4u.cl/mousetrap-season-1-hindi-webrip-all-episodes/"></a>
     <a href="https://new5.hdhub4u.cl/mousetrap-season-1-hindi-webrip-all-episodes/">Mousetrap (Season 1) WEB-DL [Hindi (DD5.1) &amp; English] | [ALL Episodes] | NF Series</a>
   </li>
   <li>
-    <a href="https://new5.hdhub4u.cl/wanted-2009-bluray-hindi-full-movie/"><img src="https://imgshare.info/images/2026/08/24/Wanted-2009.jpg" alt="Wanted (2009)"></a>
+    <img src="https://imgshare.info/images/2026/08/24/Wanted-2009.jpg" alt="Wanted (2009)">
+    <a href="https://new5.hdhub4u.cl/wanted-2009-bluray-hindi-full-movie/"></a>
     <a href="https://new5.hdhub4u.cl/wanted-2009-bluray-hindi-full-movie/">Wanted (2009) BluRay [Hindi DD5.1] 1080p 720p &amp; 480p [x264] | Full Movie</a>
   </li>
   <li>
-    <a href="https://whatsapp.com/channel/0029VbC1T9JChq6LbeQ6uh39"><img src="https://myimg.click/images/joinwhatsapp-1.png" alt="Join WhatsApp"></a>
+    <img src="https://myimg.click/images/joinwhatsapp-1.png" alt="Join WhatsApp">
+    <a href="https://whatsapp.com/channel/0029VbC1T9JChq6LbeQ6uh39">WhatsApp</a>
   </li>
 </ul>
 <div class="pagination">

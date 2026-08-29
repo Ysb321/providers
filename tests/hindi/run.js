@@ -414,6 +414,63 @@ const restoreFetch = installFetchStub();
     );
   });
 
+  await section("hdhub4u: poster is a sibling, not a child", async () => {
+    // The live listing puts the <img> BESIDE the anchors, not inside them:
+    //   <img alt="Title">  <a href="/slug/"></a>  <a href="/slug/">Title</a>
+    // A selector that only does anchor.find("img") finds nothing, so every
+    // post gets dropped for having no poster - the reported "no posts".
+    const B = "https://new5.hdhub4u.cl";
+    const html =
+      `<html><body><ul>` +
+      `<li><img src="https://image.tmdb.org/t/p/w342/a.jpg" alt="Mousetrap (Season 1)">` +
+      `<a href="${B}/mousetrap-s1/"></a>` +
+      `<a href="${B}/mousetrap-s1/">Mousetrap (Season 1) WEB-DL [Hindi] | NF Series</a></li>` +
+      `<li><img src="https://imgshare.info/images/Okja-2017.jpg" alt="Okja (2017)">` +
+      `<a href="${B}/okja-2017/"></a>` +
+      `<a href="${B}/okja-2017/">Okja (2017) BluRay [Hindi] | Full Movie</a></li>` +
+      `</ul><a href="${B}/category/hindi-dubbed/">Hindi Dubbed</a></body></html>`;
+
+    const store = new Map();
+    const get = async () => ({ status: 200, data: html, headers: {} });
+    const providerContext = {
+      axios: Object.assign(get, {
+        get,
+        post: async () => ({ status: 404, data: "", headers: {} }),
+      }),
+      cheerio: require("cheerio"),
+      commonHeaders: {},
+      openWebView: async () => {
+        throw new Error("no webview");
+      },
+      kvStore: {
+        get: async (k) => store.get(k),
+        set: async (k, v) => void store.set(k, v),
+        delete: async (k) => store.delete(k),
+        keys: async () => Array.from(store.keys()),
+        clear: async () => store.clear(),
+      },
+    };
+
+    const out = await hh.posts.getPosts({
+      filter: "",
+      page: 1,
+      providerValue: "hdhub4u",
+      signal,
+      providerContext,
+    });
+    check("finds posts when the poster is a sibling", out.length === 2, `${out.length}`);
+    check(
+      "posters are attached from the sibling img",
+      out.every((p) => /^https?:\/\//.test(p.image)),
+      out.map((p) => p.image).join(" "),
+    );
+    check(
+      "titles come from the text anchor",
+      out.some((p) => /Mousetrap/.test(p.title)) &&
+        out.some((p) => /Okja/.test(p.title)),
+    );
+  });
+
   await section("hdhub4u: landing-page mirrors are rejected", async () => {
     // hdhub4u.bi/.ec/.ms answer 200 with marketing copy and no catalogue.
     // Accepting one would cache it and return an empty library forever.

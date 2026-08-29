@@ -565,6 +565,21 @@ never recovers. Each provider ships a mirror list and fails over automatically,
 caching whichever mirror answered in `kvStore`. Users can pin a domain in
 settings.
 
+### HDHub4u listing markup
+
+The poster is **not inside the link**. One listing entry is three siblings:
+
+```html
+<img src="poster.jpg" alt="Title ...">   <!-- poster, beside the anchors -->
+<a href="/slug/"></a>                    <!-- empty anchor, no text/img -->
+<a href="/slug/">Title ...</a>           <!-- title anchor, no img -->
+```
+
+So `anchor.find("img")` finds nothing and every post gets dropped for having no
+poster — which is the *"Provider returned no posts"* the app reports. `posts.ts`
+groups anchors by permalink, then looks for the poster inside the anchor *and*
+falls back to the nearest image in the surrounding `<li>`.
+
 **HDHub4u mirrors need care.** Only the `newN.hdhub4u.<tld>` hosts serve the
 catalogue. The heavily-advertised "official" domains the site banners at the
 top of every page — `hdhub4u.bi`, `.ec`, `.ms`, `.tv`, `.download` — are static
